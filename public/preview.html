@@ -1,150 +1,246 @@
-<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#071d36" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="부이체크" />
-  <link rel="manifest" href="manifest.webmanifest" />
-  <link rel="apple-touch-icon" href="icons/icon-192.svg" />
-  <link rel="stylesheet" href="styles.css" />
-  <title>부이체크</title>
-</head>
-<body>
-  <div class="ambient ambient-a"></div>
-  <div class="ambient ambient-b"></div>
+(() => {
+  "use strict";
 
-  <main class="shell">
-    <header class="topbar">
-      <div class="brand">
-        <div class="brand-mark" aria-hidden="true">
-          <svg viewBox="0 0 44 44"><path d="M7 26c7-1 9-9 15-9 6 0 8 8 15 9v9H7z"/><path d="M12 20c4-1 6-7 10-7s6 6 10 7" fill="none"/></svg>
+  const META = {
+    paradive: {
+      name: "PARADIVE",
+      subtitle: "파라다이브 예약 현황",
+      url: "https://paradive.co.kr/service/pc/page/reservation01.php"
+    },
+    deepstation: {
+      name: "DEEP STATION",
+      subtitle: "딥스테이션 예약 현황",
+      url: "https://deepstation.kr/rez/step2.php"
+    }
+  };
+
+  const els = {
+    date: document.querySelector("#dateInput"),
+    refresh: document.querySelector("#refreshButton"),
+    list: document.querySelector("#facilityList"),
+    notice: document.querySelector("#notice"),
+    time: document.querySelector("#updateTime"),
+    help: document.querySelector("#helpButton"),
+    dialog: document.querySelector("#helpDialog"),
+    close: document.querySelector("#closeHelpButton")
+  };
+
+  let loading = false;
+
+  const pad = n => String(n).padStart(2, "0");
+  const localDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  function num(value) {
+    if (value === null || value === undefined || value === "") return null;
+    const n = Number(String(value).replace(/[^0-9.-]/g, ""));
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function normalizeSession(raw, index) {
+    return {
+      part: raw.part ?? raw.session ?? raw.name ?? `${index + 1}부`,
+      time: raw.time ?? raw.hours ?? raw.period ?? "",
+      people: num(raw.people ?? raw.remainingPeople ?? raw.remaining_people ?? raw.available),
+      front: num(raw.front ?? raw.frontBuoy ?? raw.front_buoy ?? raw.buoyFront),
+      back: num(raw.back ?? raw.backBuoy ?? raw.back_buoy ?? raw.buoyBack)
+    };
+  }
+
+  function normalizeFacility(raw, key) {
+    const src = raw ?? {};
+    const sessions = src.sessions ?? src.items ?? src.availability ?? src.parts ?? [];
+    return {
+      key,
+      connected: src.connected !== false,
+      error: src.error?.message || "",
+      sessions: Array.isArray(sessions) ? sessions.map(normalizeSession) : []
+    };
+  }
+
+  function normalize(payload) {
+    const root = payload?.data ?? payload?.facilities ?? payload ?? {};
+    return [
+      normalizeFacility(root.paradive ?? root.paraDive ?? root.PARADIVE, "paradive"),
+      normalizeFacility(root.deepstation ?? root.deepStation ?? root.DEEPSTATION, "deepstation")
+    ];
+  }
+
+  function statusClass(value) {
+    const n = num(value);
+    if (n === null) return "unknown";
+    if (n <= 0) return "closed";
+    if (n <= 5) return "limited";
+    return "available";
+  }
+
+  function display(value, unit = "") {
+    const n = num(value);
+    if (n === null) return "-";
+    if (n <= 0) return "마감";
+    return `${n}${unit}`;
+  }
+
+  function summary(sessions) {
+    return sessions.reduce((acc, item) => {
+      acc.people += Math.max(num(item.people) ?? 0, 0);
+      acc.front += Math.max(num(item.front) ?? 0, 0);
+      acc.back += Math.max(num(item.back) ?? 0, 0);
+      return acc;
+    }, { people: 0, front: 0, back: 0 });
+  }
+
+  function overall(sessions) {
+    const values = sessions.map(x => num(x.people)).filter(x => x !== null);
+    if (!values.length) return { cls: "closed", label: "확인 필요" };
+    const total = values.reduce((a,b) => a+b, 0);
+    const max = Math.max(...values);
+    if (total <= 0) return { cls: "closed", label: "전체 마감" };
+    if (max <= 5) return { cls: "limited", label: "마감 임박" };
+    return { cls: "available", label: "예약 가능" };
+  }
+
+  function esc(value) {
+    return String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+  }
+
+  function renderFacility(facility) {
+    const meta = META[facility.key];
+    const sum = summary(facility.sessions);
+    const state = overall(facility.sessions);
+
+    const rows = facility.sessions.map(s => `
+      <tr>
+        <td class="part">${esc(s.part)}</td>
+        <td class="time">${esc(s.time || "-")}</td>
+        <td><span class="value ${statusClass(s.people)}">${display(s.people, "명")}</span></td>
+        <td><span class="value ${statusClass(s.front)}">${display(s.front, "석")}</span></td>
+        <td><span class="value ${statusClass(s.back)}">${display(s.back, "석")}</span></td>
+      </tr>
+    `).join("");
+
+    const emptyMessage = facility.error || "조회 데이터가 없습니다.";
+
+    return `
+      <article class="facility-card ${facility.key}">
+        <div class="facility-hero">
+          <div class="facility-title">
+            <h2>${meta.name}</h2>
+            <span class="facility-badge ${state.cls}">${state.label}</span>
+          </div>
+          <div class="hero-stat">
+            <span>총 잔여 인원</span>
+            <strong>${sum.people}</strong><small>명</small>
+          </div>
+          <div class="hero-stat">
+            <span>전반 부이</span>
+            <strong>${sum.front}</strong><small>석</small>
+          </div>
+          <div class="hero-stat">
+            <span>후반 부이</span>
+            <strong>${sum.back}</strong><small>석</small>
+          </div>
         </div>
-        <div>
-          <h1>부이체크</h1>
-          <p>다이빙 예약 현황을 한눈에</p>
+
+        <div class="table-wrap">
+          <table class="session-table">
+            <thead>
+              <tr>
+                <th>시간</th>
+                <th class="time-column"></th>
+                <th>추가 예약 가능 인원</th>
+                <th>35M 부이 전반</th>
+                <th>35M 부이 후반</th>
+              </tr>
+            </thead>
+            <tbody>${rows || `<tr><td colspan="5">${esc(emptyMessage)}</td></tr>`}</tbody>
+          </table>
         </div>
-      </div>
-      <button type="button" id="installBtn" class="icon-btn hidden" aria-label="홈 화면 설치">
-        <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg>
-      </button>
-    </header>
 
-    <section class="hero">
-      <span class="eyebrow">SMART RESERVATION CHECK</span>
-      <h2>원하는 날짜의<br><em>잔여 인원과 부이</em>를 확인하세요.</h2>
-      <p>시설 로그인 후 돌아와 새로고침하고, 원하는 시간대를 바로 예약할 수 있습니다.</p>
-    </section>
-
-    <section class="provider-switch" aria-label="시설 선택">
-      <button type="button" class="provider-tab active" data-provider="paradive">
-        <span class="provider-dot para"></span>
-        파라다이브
-      </button>
-      <button type="button" class="provider-tab" data-provider="deepstation">
-        <span class="provider-dot deep"></span>
-        딥스테이션
-      </button>
-    </section>
-
-    <section class="glass-card account-card">
-      <div class="account-head">
-        <div>
-          <span class="section-label">FACILITY ACCOUNT</span>
-          <h3 id="providerName">파라다이브</h3>
+        <div class="facility-footer">
+          <a class="booking-button" href="${meta.url}" target="_blank" rel="noopener noreferrer">
+            ${meta.subtitle.replace(" 예약 현황", "")} 공식 예약페이지로 이동
+          </a>
         </div>
-        <span id="loginBadge" class="status-badge neutral">
-          <span class="pulse"></span> 로그인 필요
-        </span>
-      </div>
+      </article>
+    `;
+  }
 
-      <p class="account-copy">SNS 로그인 정보는 저장하지 않습니다. 공식 사이트에서 로그인한 뒤 이 화면으로 돌아오세요.</p>
+  function setNotice(message) {
+    els.notice.hidden = !message;
+    els.notice.textContent = message;
+  }
 
-      <div class="button-stack">
-        <button type="button" id="openLoginBtn" class="primary-btn">
-          <span id="loginButtonLabel">파라다이브 로그인</span>
-          <svg viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></svg>
-        </button>
-        <button type="button" id="loginCompleteBtn" class="secondary-btn hidden">로그인을 완료했어요</button>
-      </div>
-    </section>
+  function setLoading(value) {
+    loading = value;
+    els.refresh.disabled = value;
+    els.refresh.classList.toggle("loading", value);
+  }
 
-    <section id="lookupCard" class="glass-card lookup-card hidden">
-      <div class="section-title-row">
-        <div>
-          <span class="section-label">AVAILABILITY</span>
-          <h3>예약 현황 조회</h3>
-        </div>
-        <button type="button" id="demoToggle" class="demo-chip" aria-pressed="false">데모 OFF</button>
-      </div>
+  function renderLoading() {
+    els.list.innerHTML = `
+      <div class="facility-card skeleton"></div>
+      <div class="facility-card skeleton"></div>
+    `;
+  }
 
-      <label class="field-label" for="dateInput">확인할 날짜</label>
-      <div class="date-field">
-        <svg viewBox="0 0 24 24"><path d="M7 3v3m10-3v3M4 9h16M5 5h14v15H5z"/></svg>
-        <input id="dateInput" type="date" />
-      </div>
+  function render(facilities) {
+    els.list.innerHTML = facilities.map(renderFacility).join("");
+  }
 
-      <button type="button" id="refreshBtn" class="refresh-btn">
-        <svg viewBox="0 0 24 24"><path d="M20 6v5h-5M4 18v-5h5M18.5 9A7 7 0 0 0 6.3 6.3L4 9m16 6-2.3 2.7A7 7 0 0 1 5.5 15"/></svg>
-        잔여 현황 새로고침
-      </button>
-      <p id="lookupHint" class="hint">실데이터 연결 전에는 데모 모드를 켜서 화면을 확인할 수 있습니다.</p>
-    </section>
+  async function load() {
+    if (loading) return;
+    setLoading(true);
+    setNotice("");
+    renderLoading();
 
-    <section id="loadingState" class="loading-card hidden" aria-live="polite">
-      <div class="spinner"></div>
-      <div><strong>예약 정보를 확인하고 있어요</strong><span>잠시만 기다려 주세요.</span></div>
-    </section>
+    const date = els.date.value || localDate(new Date());
 
-    <section id="errorState" class="message-card hidden" aria-live="polite">
-      <div class="message-icon">!</div>
-      <div>
-        <strong id="errorTitle">실데이터 연결이 필요합니다</strong>
-        <p id="errorText">현재는 화면 배포만 가능한 상태입니다.</p>
-      </div>
-    </section>
+    try {
+      const response = await fetch(`/api/availability?date=${encodeURIComponent(date)}`, {
+        headers: { Accept: "application/json" },
+        cache: "no-store"
+      });
 
-    <section id="resultsSection" class="results hidden" aria-live="polite">
-      <div class="results-head">
-        <div>
-          <span id="resultProvider" class="section-label">PARADIVE</span>
-          <h3 id="resultDate">예약 현황</h3>
-        </div>
-        <div class="updated"><span></span><span id="updatedAt">방금 업데이트</span></div>
-      </div>
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
 
-      <div class="summary-grid">
-        <article class="summary-card featured">
-          <span>총 예약 가능</span>
-          <strong id="sumPeople">0<small>명</small></strong>
-        </article>
-        <article class="summary-card">
-          <span>전반 부이</span>
-          <strong id="sumFront">0<small>자리</small></strong>
-        </article>
-        <article class="summary-card">
-          <span>후반 부이</span>
-          <strong id="sumBack">0<small>자리</small></strong>
-        </article>
-      </div>
+      const facilities = normalize(payload);
+      const errors = facilities.filter(x => x.error).map(x => `${META[x.key].name}: ${x.error}`);
+      setNotice(errors.join(" · "));
+      render(facilities);
+    } catch (error) {
+      console.warn("[DiveSpot] load failed", error);
+      setNotice(error.message || "예약 현황을 불러오지 못했습니다.");
+      render([
+        normalizeFacility({ connected: false, error: { message: "연결 실패" }, sessions: [] }, "paradive"),
+        normalizeFacility({ connected: false, error: { message: "연결 준비 중" }, sessions: [] }, "deepstation")
+      ]);
+    } finally {
+      const now = new Date();
+      els.time.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())} 업데이트`;
+      setLoading(false);
+    }
+  }
 
-      <div class="filter-row">
-        <button type="button" class="filter-chip active" data-filter="all">전체</button>
-        <button type="button" class="filter-chip" data-filter="available">예약 가능</button>
-        <button type="button" class="filter-chip" data-filter="buoy">부이 가능</button>
-      </div>
+  els.date.value = localDate(new Date());
+  els.refresh.addEventListener("click", load);
+  els.date.addEventListener("change", load);
 
-      <div id="sessionList" class="session-list"></div>
-    </section>
+  els.help.addEventListener("click", () => els.dialog.showModal());
+  els.close.addEventListener("click", () => els.dialog.close());
+  els.dialog.addEventListener("click", e => {
+    if (e.target === els.dialog) els.dialog.close();
+  });
 
-    <footer>
-      <p>예약 가능 수량은 시설 사이트의 최신 정보와 차이가 있을 수 있습니다.</p>
-      <p>실제 예약 전 공식 페이지에서 최종 확인해 주세요.</p>
-    </footer>
-  </main>
+  document.addEventListener("DOMContentLoaded", load);
 
-  <script src="app.js"></script>
-</body>
-</html>
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+})();
