@@ -1,10 +1,9 @@
 "use strict";
 
 const BASE_URL = "https://deepstation.kr";
-const CHECK_URL = `${BASE_URL}/rez/ajax.dayinfo.php`;
+const DAY_INFO_URL = `${BASE_URL}/rez/ajax.dayinfo.php`;
 const RESERVATION_URL = `${BASE_URL}/rez/step2.php`;
-const CACHE_TTL_MS = Math.max(30_000, Number(process.env.DEEPSTATION_CACHE_SECONDS || 300) * 1000);
-
+const CACHE_TTL_MS = Math.max(30_000, Number(process.env.DEEPSTATION_CACHE_SECONDS || 120) * 1000);
 const cache = new Map();
 
 function providerError(message, code, statusCode = 502) {
@@ -14,13 +13,60 @@ function providerError(message, code, statusCode = 502) {
   return error;
 }
 
-function toNumber(value) {
+function asNumber(value) {
   const number = Number(value);
-  return Number.isFinite(number) ? number : 0;
+  return Number.isFinite(number) ? number : null;
 }
 
-async function requestDayInfo(date) {
-  const url = new URL(CHECK_URL);
+function getCookie() {
+  return String(process.env.DEEPSTATION_COOKIE || "").trim();
+}
+
+function buildHeaders() {
+  const headers = {
+    Accept: "application/json, text/plain, */*",
+    "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+    Referer: RESERVATION_URL,
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "X-Requested-With": "XMLHttpRequest"
+  };
+
+  const cookie = getCookie();
+  if (cookie) headers.Cookie = cookie;
+  return headers;
+}
+
+function normalizeSessions(payload) {
+  const general = payload?.remain?.gen;
+  const buoySlots = Array.isArray(payload?.remain_buoys) ? payload.remain_buoys : [];
+
+  if (!Array.isArray(general)) {
+    throw providerError(
+      "딥스테이션 예약 응답에서 일반권 정보를 찾지 못했습니다.",
+      "DEEPSTATION_BAD_RESPONSE"
+    );
+  }
+
+  return general.map((session, index) => {
+    const matchingBuoys = buoySlots
+      .filter(slot => String(slot.stime || "") >= String(session.stime || "") && String(slot.etime || "") <= String(session.etime || ""))
+      .sort((a, b) => String(a.stime || "").localeCompare(String(b.stime || "")));
+
+    const frontSlot = matchingBuoys[0] || buoySlots[index * 2];
+    const backSlot = matchingBuoys[1] || buoySlots[index * 2 + 1];
+
+    return {
+      part: `${index + 1}부`,
+      time: `${session.stime || ""} ~ ${session.etime || ""}`.trim(),
+      people: asNumber(session.remain),
+      front: asNumber(frontSlot?.remain_buoys),
+      back: asNumber(backSlot?.remain_buoys)
+    };
+  });
+}
+
+async function requestAvailability(date) {
+  const url = new URL(DAY_INFO_URL);
   url.searchParams.set("date", date);
   url.searchParams.set("rez_id", "undefined");
   url.searchParams.set("rtype", "프리다이빙");
@@ -33,42 +79,47 @@ async function requestDayInfo(date) {
       method: "GET",
       redirect: "follow",
       signal: controller.signal,
-      headers: {
-        Accept: "application/json, text/javascript, */*; q=0.01",
-        Referer: RESERVATION_URL,
-        "User-Agent": "Mozilla/5.0 (compatible; DiveSpot/1.0)",
-        "X-Requested-With": "XMLHttpRequest"
-      }
+      headers: buildHeaders()
     });
 
     const text = await response.text();
-    let json;
-
+    let payload;
     try {
-      json = JSON.parse(text);
+      payload = JSON.parse(text);
     } catch {
+      const preview = text.replace(/\s+/g, " ").slice(0, 180);
+      console.error(`[DiveSpot] DeepStation non-JSON response (${response.status}): ${preview}`);
+
+      if (!getCookie()) {
+        throw providerError(
+          "딥스테이션 로그인 쿠키가 필요합니다. Render 환경변수 DEEPSTATION_COOKIE를 설정해 주세요.",
+          "DEEPSTATION_LOGIN_REQUIRED",
+          503
+        );
+      }
+
       throw providerError(
-        "딥스테이션 응답 형식을 확인할 수 없습니다.",
-        "DEEPSTATION_BAD_RESPONSE",
-        502
+        "딥스테이션 로그인 세션이 만료되었거나 접근이 차단되었습니다. DEEPSTATION_COOKIE를 다시 설정해 주세요.",
+        "DEEPSTATION_SESSION_EXPIRED",
+        503
       );
     }
 
-    if (!response.ok || json?.code !== 1) {
+    if (!response.ok || Number(payload?.code) !== 1) {
       throw providerError(
-        json?.message || `딥스테이션 요청에 실패했습니다. (${response.status})`,
+        payload?.message || `딥스테이션 요청에 실패했습니다. (${response.status})`,
         "DEEPSTATION_REQUEST_FAILED",
-        502
+        response.status >= 400 ? response.status : 502
       );
     }
 
-    return json;
+    return normalizeSessions(payload);
   } catch (error) {
     if (error?.name === "AbortError") {
       throw providerError("딥스테이션 응답 시간이 초과되었습니다.", "DEEPSTATION_TIMEOUT", 504);
     }
-    if (error instanceof TypeError) {
-      throw providerError("딥스테이션 서버에 연결하지 못했습니다.", "DEEPSTATION_CONNECTION_FAILED", 502);
+    if (error instanceof TypeError && /fetch failed/i.test(error.message || "")) {
+      throw providerError("딥스테이션 서버에 연결하지 못했습니다.", "DEEPSTATION_NETWORK_ERROR", 502);
     }
     throw error;
   } finally {
@@ -76,45 +127,16 @@ async function requestDayInfo(date) {
   }
 }
 
-function normalizeSessions(payload) {
-  const peopleSessions = Array.isArray(payload?.remain?.gen) ? payload.remain.gen : [];
-  const buoySessions = Array.isArray(payload?.remain_buoys) ? payload.remain_buoys : [];
-
-  return peopleSessions.map((session, index) => {
-    const frontBuoy = buoySessions[index * 2];
-    const backBuoy = buoySessions[index * 2 + 1];
-
-    return {
-      part: `${index + 1}부`,
-      time: `${session.stime || ""} ~ ${session.etime || ""}`.trim(),
-      people: toNumber(session.remain),
-      front: frontBuoy ? toNumber(frontBuoy.remain_buoys) : null,
-      back: backBuoy ? toNumber(backBuoy.remain_buoys) : null
-    };
-  });
-}
-
 async function getAvailability(date) {
   const cached = cache.get(date);
   if (cached && cached.expiresAt > Date.now()) return cached.sessions;
 
-  const payload = await requestDayInfo(date);
-  const sessions = normalizeSessions(payload);
-
-  if (!sessions.length) {
-    throw providerError(
-      "딥스테이션 예약 현황 데이터가 없습니다.",
-      "DEEPSTATION_NO_DATA",
-      502
-    );
-  }
-
+  const sessions = await requestAvailability(date);
   cache.set(date, {
     expiresAt: Date.now() + CACHE_TTL_MS,
     sessions
   });
-
   return sessions;
 }
 
-module.exports = { getAvailability };
+module.exports = { getAvailability, normalizeSessions };
