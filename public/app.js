@@ -5,7 +5,7 @@
     paradive: {
       name: "PARADIVE",
       subtitle: "파라다이브 예약 현황",
-      url: "https://paradive.co.kr/service/pc/page/reservation02.php"
+      url: "https://paradive.co.kr/service/pc/page/reservation01.php"
     },
     deepstation: {
       name: "DEEP STATION",
