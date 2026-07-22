@@ -174,9 +174,25 @@ async function performLogin() {
   // 새 일반 계정 로그인은 기존 SNS/수동 쿠키와 섞지 않고 깨끗한 세션에서 시작한다.
   let cookie = "";
 
+  // 딥스테이션은 첫 홈페이지 접속 때 PHPSESSID 외에 접속 확인용 쿠키를
+  // 함께 발급한다. 로그인 페이지부터 바로 열면 이 쿠키가 빠져
+  // ajax.dayinfo.php가 "올바른 경로로 접근하세요"를 반환할 수 있다.
+  const home = await requestWithCookieJar(`${BASE_URL}/`, {
+    method: "GET",
+    headers: {
+      Referer: BASE_URL,
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "none",
+      "Upgrade-Insecure-Requests": "1"
+    }
+  }, cookie);
+  cookie = home.cookie;
+  await home.response.arrayBuffer();
+
   const page = await requestWithCookieJar(LOGIN_PAGE_URL, {
     method: "GET",
-    headers: { Referer: BASE_URL }
+    headers: { Referer: `${BASE_URL}/` }
   }, cookie);
   cookie = page.cookie;
   await page.response.arrayBuffer();
@@ -241,6 +257,8 @@ async function performLogin() {
   }
 
   sessionCookie = cookie;
+  const cookieNames = Array.from(parseCookieHeader(cookie).keys()).join(", ");
+  console.log(`[DiveSpot] DeepStation cookie names: ${cookieNames || "(none)"}`);
   console.log("[DiveSpot] DeepStation automatic login succeeded.");
   return cookie;
 }
