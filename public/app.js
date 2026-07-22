@@ -108,6 +108,18 @@
     return `${n}${unit}`;
   }
 
+  function displayBuoy(value, facilityKey) {
+    const n = num(value);
+    if (n === null) return "-";
+    if (facilityKey === "paradive") return n > 0 ? "예약 가능" : "마감";
+    return n > 0 ? `${n}석` : "마감";
+  }
+
+  function buoyHero(value, facilityKey) {
+    if (facilityKey !== "paradive") return `<strong>${value}</strong><small>석</small>`;
+    return `<strong>${value > 0 ? `${value}부` : "마감"}</strong><small>${value > 0 ? "예약 가능" : ""}</small>`;
+  }
+
   function summary(sessions) {
     return sessions.reduce((acc, item) => {
       acc.people += Math.max(num(item.people) ?? 0, 0);
@@ -146,8 +158,8 @@
         <td class="part">${esc(s.part)}</td>
         <td class="time">${esc(s.time || "-")}</td>
         <td><span class="value ${statusClass(s.people)}">${display(s.people, "명")}</span></td>
-        <td><span class="value ${statusClass(s.front)}">${display(s.front, "석")}</span></td>
-        <td><span class="value ${statusClass(s.back)}">${display(s.back, "석")}</span></td>
+        <td><span class="value ${statusClass(s.front)}">${displayBuoy(s.front, facility.key)}</span></td>
+        <td><span class="value ${statusClass(s.back)}">${displayBuoy(s.back, facility.key)}</span></td>
       </tr>
     `).join("");
 
@@ -166,11 +178,11 @@
           </div>
           <div class="hero-stat">
             <span>전반 부이</span>
-            <strong>${sum.front}</strong><small>석</small>
+            ${buoyHero(sum.front, facility.key)}
           </div>
           <div class="hero-stat">
             <span>후반 부이</span>
-            <strong>${sum.back}</strong><small>석</small>
+            ${buoyHero(sum.back, facility.key)}
           </div>
         </div>
 
