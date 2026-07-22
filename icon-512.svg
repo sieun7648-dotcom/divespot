@@ -1,24 +1,34 @@
-{
-  "name": "부이체크",
-  "short_name": "부이체크",
-  "description": "파라다이브와 딥스테이션 예약 가능 인원 및 부이 현황 확인",
-  "start_url": "/",
-  "display": "standalone",
-  "background_color": "#edf4fb",
-  "theme_color": "#071d36",
-  "lang": "ko-KR",
-  "icons": [
-    {
-      "src": "/icons/icon-192.svg",
-      "sizes": "192x192",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icons/icon-512.svg",
-      "sizes": "512x512",
-      "type": "image/svg+xml",
-      "purpose": "any maskable"
-    }
-  ]
-}
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DiveSpot 초기화</title>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f4f7fd;color:#10234d;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    main{width:min(420px,calc(100% - 32px));padding:28px;border-radius:20px;background:#fff;box-shadow:0 14px 35px rgba(29,55,100,.12);text-align:center}
+    h1{margin:0 0 10px}p{color:#71809f;line-height:1.6}
+  </style>
+</head>
+<body>
+  <main><h1>DiveSpot 초기화 중</h1><p>이전 화면 캐시를 지우고 새 버전으로 이동합니다.</p></main>
+  <script>
+    (async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          await Promise.all(registrations.map(item => item.unregister()));
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          await Promise.all(keys.map(key => caches.delete(key)));
+        }
+        localStorage.clear();
+        sessionStorage.clear();
+      } finally {
+        location.replace('/?repair=20260722-3');
+      }
+    })();
+  </script>
+</body>
+</html>

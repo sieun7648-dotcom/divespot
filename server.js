@@ -9,8 +9,19 @@ const PORT = process.env.PORT || 3000;
 
 app.disable("x-powered-by");
 app.use(express.json());
+
+// 배포 직후 예전 HTML/CSS가 남지 않도록 정적 파일을 항상 재검증합니다.
 app.use(express.static(path.join(__dirname, "public"), {
-  maxAge: process.env.NODE_ENV === "production" ? "1h" : 0
+  maxAge: 0,
+  etag: true,
+  setHeaders(res, filePath) {
+    const name = path.basename(filePath);
+    if (["index.html", "sw.js", "reset.html"].includes(name)) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      return;
+    }
+    res.setHeader("Cache-Control", "public, max-age=0, must-revalidate");
+  }
 }));
 
 app.get("/api/health", (_req, res) => {
@@ -26,6 +37,7 @@ async function loadProvider(provider, date, req) {
     const sessions = await getAvailability(provider, date, req);
     return { provider, connected: true, sessions };
   } catch (error) {
+    console.error(`[${provider}]`, error);
     return {
       provider,
       connected: false,
@@ -76,6 +88,7 @@ app.get("/api/availability", async (req, res) => {
 });
 
 app.get("*", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 

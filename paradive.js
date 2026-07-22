@@ -1,8 +1,8 @@
-const CACHE = "divespot-v3";
+const CACHE = "divespot-v4";
 const ASSETS = [
   "/",
-  "/style.css?v=20260722-2",
-  "/app.js?v=20260722-2",
+  "/style.css?v=20260722-3",
+  "/app.js?v=20260722-3",
   "/manifest.webmanifest",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg"

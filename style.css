@@ -1,7 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071d36"/><stop offset="1" stop-color="#2386ff"/></linearGradient></defs>
-<rect width="512" height="512" rx="120" fill="url(#g)"/>
-<path d="M94 300c77-8 97-104 162-104s85 96 162 104v104H94z" fill="#fff" opacity=".96"/>
-<path d="M144 226c44-12 62-79 112-79s68 67 112 79" fill="none" stroke="#4fd7e8" stroke-width="28" stroke-linecap="round"/>
-<circle cx="256" cy="122" r="27" fill="#35d3a7"/>
-</svg>
+{
+  "name": "부이체크",
+  "short_name": "부이체크",
+  "description": "파라다이브와 딥스테이션 예약 가능 인원 및 부이 현황 확인",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#edf4fb",
+  "theme_color": "#071d36",
+  "lang": "ko-KR",
+  "icons": [
+    {
+      "src": "/icons/icon-192.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
