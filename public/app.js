@@ -1,369 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d2859" />
+  <meta name="description" content="안드로이드에 DiveSpot 설치하기" />
+  <title>DiveSpot 안드로이드 설치</title>
+  <link rel="manifest" href="/manifest.webmanifest?v=9" />
+  <link rel="icon" href="/icons/icon-192.png" type="image/png" />
+  <style>
+    :root{--navy:#0d2859;--blue:#1559d8;--bg:#f4f7fd;--muted:#71809f;--line:#e2e8f2}
+    *{box-sizing:border-box} body{margin:0;min-height:100vh;background:radial-gradient(circle at 10% 0%,rgba(63,122,255,.13),transparent 26rem),var(--bg);font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR","Segoe UI",sans-serif;color:var(--navy)}
+    main{width:min(520px,calc(100% - 32px));margin:0 auto;padding:max(30px,env(safe-area-inset-top)) 0 max(34px,env(safe-area-inset-bottom))}
+    .brand{display:flex;align-items:center;gap:14px;margin:8px 0 26px}.brand img{width:58px;height:58px;border-radius:17px;box-shadow:0 12px 28px rgba(13,40,89,.18)}.brand h1{margin:0;font-size:27px}.brand p{margin:4px 0 0;color:var(--muted);font-size:13px;font-weight:700}
+    .card{background:#fff;border:1px solid rgba(255,255,255,.9);border-radius:25px;padding:25px;box-shadow:0 18px 45px rgba(29,55,100,.11)}
+    .tag{display:inline-flex;padding:7px 10px;border-radius:999px;background:#eaf1ff;color:var(--blue);font-size:11px;font-weight:900}.card h2{margin:14px 0 9px;font-size:25px;line-height:1.3}.lead{margin:0 0 22px;color:var(--muted);font-size:14px;line-height:1.65}
+    button,a.button{width:100%;min-height:54px;border:0;border-radius:16px;display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:900;font-size:15px}
+    #installButton{background:linear-gradient(135deg,#0d2859,#1559d8);color:#fff;box-shadow:0 12px 24px rgba(21,89,216,.24)}
+    a.button{margin-top:10px;background:#eef3fb;color:var(--navy)}
+    .steps{margin:24px 0 0;padding:0;list-style:none;display:grid;gap:13px}.steps li{display:grid;grid-template-columns:31px 1fr;gap:11px;align-items:start;color:#364b73;font-size:14px;line-height:1.55}.num{width:31px;height:31px;border-radius:10px;background:#edf3ff;color:var(--blue);display:grid;place-items:center;font-weight:900}.note{margin:19px 0 0;padding:14px 15px;border-radius:14px;background:#f7f9fd;color:var(--muted);font-size:12px;line-height:1.55;border:1px solid var(--line)}
+    .done{display:none;margin-bottom:16px;padding:13px;border-radius:14px;background:#e7f7ef;color:#14845a;font-weight:800;font-size:13px}.done.show{display:block}
+  </style>
+</head>
+<body>
+<main>
+  <div class="brand"><img src="/icons/icon-192.png" alt="DiveSpot" /><div><h1>DiveSpot</h1><p>안드로이드 홈 화면 설치</p></div></div>
+  <section class="card">
+    <div id="installedMessage" class="done">이미 DiveSpot이 앱처럼 실행되고 있어요.</div>
+    <span class="tag">ANDROID</span>
+    <h2>홈 화면에 DiveSpot을 설치하세요</h2>
+    <p class="lead">설치 후에는 주소창 없이 앱처럼 바로 열 수 있어요.</p>
+    <button id="installButton" type="button">DiveSpot 설치하기</button>
+    <a class="button" href="/">설치하지 않고 바로 열기</a>
+    <ol class="steps">
+      <li><span class="num">1</span><span>위의 <b>설치하기</b> 버튼을 누릅니다.</span></li>
+      <li><span class="num">2</span><span>설치 창이 안 뜨면 Chrome 오른쪽 위 <b>⋮</b>를 누릅니다.</span></li>
+      <li><span class="num">3</span><span><b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택합니다.</span></li>
+    </ol>
+    <p id="fallbackNote" class="note">설치 버튼이 바로 작동하지 않는 브라우저에서는 Chrome 메뉴의 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 이용해 주세요.</p>
+  </section>
+</main>
+<script>
 (() => {
   "use strict";
+  let installPrompt = null;
+  const button = document.querySelector("#installButton");
+  const done = document.querySelector("#installedMessage");
+  const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 
-  const META = {
-    paradive: {
-      name: "PARADIVE",
-      subtitle: "파라다이브 예약 현황",
-      url: "https://paradive.co.kr/service/pc/page/reservation01.php"
-    },
-    deepstation: {
-      name: "DEEP STATION",
-      subtitle: "딥스테이션 예약 현황",
-      url: "https://deepstation.kr/rez/step2.php"
-    }
-  };
-
-  const els = {
-    date: document.querySelector("#dateInput"),
-    refresh: document.querySelector("#refreshButton"),
-    list: document.querySelector("#facilityList"),
-    notice: document.querySelector("#notice"),
-    time: document.querySelector("#updateTime"),
-    help: document.querySelector("#helpButton"),
-    dialog: document.querySelector("#helpDialog"),
-    close: document.querySelector("#closeHelpButton"),
-    paradiveStatusIcon: document.querySelector("#paradiveStatusIcon"),
-    paradiveStatusText: document.querySelector("#paradiveStatusText"),
-    deepstationStatusIcon: document.querySelector("#deepstationStatusIcon"),
-    deepstationStatusText: document.querySelector("#deepstationStatusText")
-  };
-
-  let loading = false;
-  let loadSequence = 0;
-  let activeController = null;
-
-  const FACILITY_KEYS = ["paradive", "deepstation"];
-
-  const SELECTED_DATE_KEY = "divespot_selected_date";
-  const pad = n => String(n).padStart(2, "0");
-  const localDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
-
-  function readSelectedDate() {
-    try {
-      const saved = localStorage.getItem(SELECTED_DATE_KEY);
-      return validDate(saved) ? saved : localDate(new Date());
-    } catch {
-      return localDate(new Date());
-    }
-  }
-
-  function saveSelectedDate(value) {
-    if (!validDate(value)) return;
-    try {
-      localStorage.setItem(SELECTED_DATE_KEY, value);
-    } catch {
-      // 저장 공간을 사용할 수 없는 환경에서는 현재 화면의 날짜만 사용합니다.
-    }
-  }
-
-  function num(value) {
-    if (value === null || value === undefined || value === "") return null;
-    const n = Number(String(value).replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(n) ? n : null;
-  }
-
-  function normalizeSession(raw, index) {
-    return {
-      part: raw.part ?? raw.session ?? raw.name ?? `${index + 1}부`,
-      time: raw.time ?? raw.hours ?? raw.period ?? "",
-      people: num(raw.people ?? raw.remainingPeople ?? raw.remaining_people ?? raw.available),
-      front: num(raw.front ?? raw.frontBuoy ?? raw.front_buoy ?? raw.buoyFront),
-      back: num(raw.back ?? raw.backBuoy ?? raw.back_buoy ?? raw.buoyBack)
-    };
-  }
-
-  function normalizeFacility(raw, key) {
-    const src = raw ?? {};
-    const sessions = src.sessions ?? src.items ?? src.availability ?? src.parts ?? [];
-    return {
-      key,
-      connected: src.connected !== false,
-      error: src.error?.message || "",
-      sessions: Array.isArray(sessions) ? sessions.map(normalizeSession) : []
-    };
-  }
-
-  function normalize(payload) {
-    const root = payload?.data ?? payload?.facilities ?? payload ?? {};
-    return [
-      normalizeFacility(root.paradive ?? root.paraDive ?? root.PARADIVE, "paradive"),
-      normalizeFacility(root.deepstation ?? root.deepStation ?? root.DEEPSTATION, "deepstation")
-    ];
-  }
-
-  function statusClass(value) {
-    const n = num(value);
-    if (n === null) return "unknown";
-    if (n <= 0) return "closed";
-    if (n <= 5) return "limited";
-    return "available";
-  }
-
-  function display(value, unit = "") {
-    const n = num(value);
-    if (n === null) return "-";
-    if (n <= 0) return "마감";
-    return `${n}${unit}`;
-  }
-
-  function summary(sessions) {
-    return sessions.reduce((acc, item) => {
-      acc.people += Math.max(num(item.people) ?? 0, 0);
-      acc.front += Math.max(num(item.front) ?? 0, 0);
-      acc.back += Math.max(num(item.back) ?? 0, 0);
-      return acc;
-    }, { people: 0, front: 0, back: 0 });
-  }
-
-  function overall(sessions) {
-    const values = sessions.map(x => num(x.people)).filter(x => x !== null);
-    if (!values.length) return { cls: "closed", label: "확인 필요" };
-    const total = values.reduce((a,b) => a+b, 0);
-    const max = Math.max(...values);
-    if (total <= 0) return { cls: "closed", label: "전체 마감" };
-    if (max <= 5) return { cls: "limited", label: "마감 임박" };
-    return { cls: "available", label: "예약 가능" };
-  }
-
-  function esc(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
-  }
-
-  function renderFacility(facility) {
-    const meta = META[facility.key];
-    const sum = summary(facility.sessions);
-    const state = overall(facility.sessions);
-
-    const rows = facility.sessions.map(s => `
-      <tr>
-        <td class="part">${esc(s.part)}</td>
-        <td class="time">${esc(s.time || "-")}</td>
-        <td><span class="value ${statusClass(s.people)}">${display(s.people, "명")}</span></td>
-        <td><span class="value ${statusClass(s.front)}">${display(s.front, "석")}</span></td>
-        <td><span class="value ${statusClass(s.back)}">${display(s.back, "석")}</span></td>
-      </tr>
-    `).join("");
-
-    const emptyMessage = facility.error || "조회 데이터가 없습니다.";
-
-    return `
-      <article class="facility-card ${facility.key}">
-        <div class="facility-hero">
-          <div class="facility-title">
-            <h2>${meta.name}</h2>
-            <span class="facility-badge ${state.cls}">${state.label}</span>
-          </div>
-          <div class="hero-stat">
-            <span>총 잔여 인원</span>
-            <strong>${sum.people}</strong><small>명</small>
-          </div>
-          <div class="hero-stat">
-            <span>전반 부이</span>
-            <strong>${sum.front}</strong><small>석</small>
-          </div>
-          <div class="hero-stat">
-            <span>후반 부이</span>
-            <strong>${sum.back}</strong><small>석</small>
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table class="session-table">
-            <thead>
-              <tr>
-                <th>시간</th>
-                <th class="time-column"></th>
-                <th>추가 예약 가능 인원</th>
-                <th>35M 부이 전반</th>
-                <th>35M 부이 후반</th>
-              </tr>
-            </thead>
-            <tbody>${rows || `<tr><td colspan="5">${esc(emptyMessage)}</td></tr>`}</tbody>
-          </table>
-        </div>
-
-        <div class="facility-footer">
-          <a class="booking-button" href="${meta.url}" target="_blank" rel="noopener noreferrer">
-            ${meta.subtitle.replace(" 예약 현황", "")} 공식 예약페이지로 이동
-          </a>
-        </div>
-      </article>
-    `;
-  }
-
-  function setNotice(message) {
-    els.notice.hidden = !message;
-    els.notice.textContent = message;
-  }
-
-  function setLoading(value) {
-    loading = value;
-    els.refresh.disabled = value;
-    els.refresh.classList.toggle("loading", value);
-  }
-
-  function renderLoadingCard(key) {
-    return `<div class="facility-card skeleton ${key}" aria-label="${META[key].name} 조회 중"></div>`;
-  }
-
-  function renderState(state) {
-    els.list.innerHTML = FACILITY_KEYS
-      .map(key => state[key] ? renderFacility(state[key]) : renderLoadingCard(key))
-      .join("");
-  }
-
-  function setConnectionPending() {
-    const items = [
-      [els.paradiveStatusIcon, els.paradiveStatusText],
-      [els.deepstationStatusIcon, els.deepstationStatusText]
-    ];
-
-    for (const [icon, text] of items) {
-      if (icon) {
-        icon.textContent = "…";
-        icon.classList.remove("disconnected");
-      }
-      if (text) text.textContent = "확인 중";
-    }
-  }
-
-  function updateConnectionStatus(facilities) {
-    for (const facility of facilities) {
-      const icon = facility.key === "paradive" ? els.paradiveStatusIcon : els.deepstationStatusIcon;
-      const text = facility.key === "paradive" ? els.paradiveStatusText : els.deepstationStatusText;
-      const connected = facility.connected && facility.sessions.length > 0;
-      if (icon) {
-        icon.textContent = connected ? "✓" : "!";
-        icon.classList.toggle("disconnected", !connected);
-      }
-      if (text) text.textContent = connected ? "연결됨" : "확인 필요";
-    }
-  }
-
-  function render(facilities) {
-    updateConnectionStatus(facilities);
-    els.list.innerHTML = facilities.map(renderFacility).join("");
-  }
-
-  async function fetchFacility(key, date, signal) {
-    const response = await fetch(
-      `/api/availability?date=${encodeURIComponent(date)}&provider=${encodeURIComponent(key)}`,
-      {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-        signal
-      }
-    );
-
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      // JSON이 아닌 오류 응답은 아래의 공통 메시지로 처리합니다.
-    }
-
-    if (!response.ok || payload?.ok === false) {
-      const message = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(message);
-    }
-
-    return normalizeFacility({
-      connected: true,
-      sessions: payload?.sessions || []
-    }, key);
-  }
-
-  async function load() {
-    const sequence = ++loadSequence;
-    activeController?.abort();
-    activeController = new AbortController();
-
-    setLoading(true);
-    setNotice("");
-    setConnectionPending();
-    els.time.textContent = "조회 중...";
-
-    const date = validDate(els.date.value) ? els.date.value : readSelectedDate();
-    els.date.value = date;
-    saveSelectedDate(date);
-
-    const state = { paradive: null, deepstation: null };
-    const errors = {};
-    renderState(state);
-
-    const tasks = FACILITY_KEYS.map(async key => {
-      try {
-        const facility = await fetchFacility(key, date, activeController.signal);
-        if (sequence !== loadSequence) return;
-        state[key] = facility;
-        delete errors[key];
-      } catch (error) {
-        if (error?.name === "AbortError" || sequence !== loadSequence) return;
-        console.warn(`[DiveSpot] ${key} load failed`, error);
-        const message = error?.message || "연결 실패";
-        state[key] = normalizeFacility({
-          connected: false,
-          error: { message },
-          sessions: []
-        }, key);
-        errors[key] = `${META[key].name}: ${message}`;
-      }
-
-      if (sequence !== loadSequence) return;
-      updateConnectionStatus([state[key]]);
-      renderState(state);
-      setNotice(FACILITY_KEYS.map(item => errors[item]).filter(Boolean).join(" · "));
+  if (standalone) {
+    done.classList.add("show");
+    button.textContent = "DiveSpot 열기";
+    button.addEventListener("click", () => location.href = "/");
+  } else {
+    window.addEventListener("beforeinstallprompt", event => {
+      event.preventDefault();
+      installPrompt = event;
+      button.textContent = "DiveSpot 설치하기";
     });
 
-    await Promise.allSettled(tasks);
-
-    if (sequence !== loadSequence) return;
-    const now = new Date();
-    els.time.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())} 업데이트`;
-    setLoading(false);
+    button.addEventListener("click", async () => {
+      if (!installPrompt) {
+        alert("Chrome 오른쪽 위 ⋮ 메뉴에서 ‘앱 설치’ 또는 ‘홈 화면에 추가’를 눌러주세요.");
+        return;
+      }
+      installPrompt.prompt();
+      await installPrompt.userChoice;
+      installPrompt = null;
+    });
   }
 
-  els.date.value = readSelectedDate();
-  els.refresh.addEventListener("click", () => {
-    saveSelectedDate(els.date.value);
-    load();
+  window.addEventListener("appinstalled", () => {
+    done.classList.add("show");
+    button.textContent = "설치 완료";
+    button.disabled = true;
   });
-  els.date.addEventListener("change", () => {
-    const selected = validDate(els.date.value) ? els.date.value : localDate(new Date());
-    els.date.value = selected;
-    saveSelectedDate(selected);
-    load();
-  });
-  window.addEventListener("pagehide", () => saveSelectedDate(els.date.value));
-
-  els.help.addEventListener("click", () => els.dialog.showModal());
-  els.close.addEventListener("click", () => els.dialog.close());
-  els.dialog.addEventListener("click", e => {
-    if (e.target === els.dialog) els.dialog.close();
-  });
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", load, { once: true });
-  } else {
-    load();
-  }
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.getRegistrations()
-      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
-      .catch(() => {});
-  }
-
-  if ("caches" in window) {
-    caches.keys()
-      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
-      .catch(() => {});
+    navigator.serviceWorker.register("/sw.js?v=9").catch(() => {});
   }
 })();
+</script>
+</body>
+</html>
