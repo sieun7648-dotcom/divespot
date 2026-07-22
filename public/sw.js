@@ -1,7 +1,50 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071d36"/><stop offset="1" stop-color="#2386ff"/></linearGradient></defs>
-<rect width="512" height="512" rx="120" fill="url(#g)"/>
-<path d="M94 300c77-8 97-104 162-104s85 96 162 104v104H94z" fill="#fff" opacity=".96"/>
-<path d="M144 226c44-12 62-79 112-79s68 67 112 79" fill="none" stroke="#4fd7e8" stroke-width="28" stroke-linecap="round"/>
-<circle cx="256" cy="122" r="27" fill="#35d3a7"/>
-</svg>
+const CACHE = "divespot-v3";
+const ASSETS = [
+  "/",
+  "/style.css?v=20260722-2",
+  "/app.js?v=20260722-2",
+  "/manifest.webmanifest",
+  "/icons/icon-192.svg",
+  "/icons/icon-512.svg"
+];
+
+self.addEventListener("install", event => {
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  self.skipWaiting();
+});
+
+self.addEventListener("activate", event => {
+  event.waitUntil(
+    caches.keys().then(keys => Promise.all(
+      keys.filter(key => key !== CACHE).map(key => caches.delete(key))
+    ))
+  );
+  self.clients.claim();
+});
+
+self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
+  const url = new URL(event.request.url);
+  if (url.origin !== self.location.origin) return;
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(
+      fetch(event.request)
+        .then(response => {
+          if (response.ok) caches.open(CACHE).then(cache => cache.put("/", response.clone()));
+          return response;
+        })
+        .catch(() => caches.match("/"))
+    );
+    return;
+  }
+
+  event.respondWith(
+    fetch(event.request)
+      .then(response => {
+        if (response.ok) caches.open(CACHE).then(cache => cache.put(event.request, response.clone()));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
+  );
+});

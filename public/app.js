@@ -10,7 +10,7 @@
     deepstation: {
       name: "DEEP STATION",
       subtitle: "딥스테이션 예약 현황",
-      url: "https://deepstation.kr/"
+      url: "https://deepstation.kr/rez/step2.php"
     }
   };
 
@@ -118,8 +118,8 @@
         <td class="part">${esc(s.part)}</td>
         <td class="time">${esc(s.time || "-")}</td>
         <td><span class="value ${statusClass(s.people)}">${display(s.people, "명")}</span></td>
-        <td><span class="value ${statusClass(s.front)}">${display(s.front, "자리")}</span></td>
-        <td><span class="value ${statusClass(s.back)}">${display(s.back, "자리")}</span></td>
+        <td><span class="value ${statusClass(s.front)}">${display(s.front, "석")}</span></td>
+        <td><span class="value ${statusClass(s.back)}">${display(s.back, "석")}</span></td>
       </tr>
     `).join("");
 
@@ -138,11 +138,11 @@
           </div>
           <div class="hero-stat">
             <span>전반 부이</span>
-            <strong>${sum.front}</strong><small>자리</small>
+            <strong>${sum.front}</strong><small>석</small>
           </div>
           <div class="hero-stat">
             <span>후반 부이</span>
-            <strong>${sum.back}</strong><small>자리</small>
+            <strong>${sum.back}</strong><small>석</small>
           </div>
         </div>
 
