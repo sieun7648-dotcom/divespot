@@ -13,12 +13,15 @@ function secondsFromEnv(name, fallback, minimum) {
   return Math.max(minimum, seconds) * 1000;
 }
 
-const CACHE_TTL_MS = secondsFromEnv("DEEPSTATION_CACHE_SECONDS", 120, 30);
+const CACHE_TTL_MS = Math.min(
+  secondsFromEnv("DEEPSTATION_CACHE_SECONDS", 30, 10),
+  30_000
+);
 // 실제 로그아웃 응답은 자동 감지하므로 정상 세션을 짧은 주기로 버리지 않는다.
 const SESSION_TTL_MS = secondsFromEnv("DEEPSTATION_SESSION_SECONDS", 6 * 60 * 60, 6 * 60 * 60);
 const BROWSER_TIMEOUT_MS = secondsFromEnv("DEEPSTATION_TIMEOUT_SECONDS", 25, 5);
 const ENTRY_TIMEOUT_MS = secondsFromEnv("DEEPSTATION_ENTRY_TIMEOUT_SECONDS", 8, 3);
-const STALE_TTL_MS = secondsFromEnv("DEEPSTATION_STALE_SECONDS", 30 * 60, 60);
+const USER_CHECK_TIMEOUT_MS = secondsFromEnv("DEEPSTATION_USER_CHECK_TIMEOUT_SECONDS", 25, 15);
 const DIAGNOSTIC_TTL_MS = 60_000;
 
 const cache = new Map();
@@ -45,20 +48,40 @@ function asNumber(value) {
   return Number.isFinite(number) ? number : null;
 }
 
+function redactSensitiveText(value) {
+  let text = String(value ?? "");
+  const sensitiveKey = "password|passwd|pwd|mb_password|email|mb_id|user_id|username|phone|tel|mobile|token|authorization|cookie|session(?:id)?|phpsessid";
+
+  text = text
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[EMAIL_MASKED]")
+    .replace(/(?:\+82[-.\s]?|0)(?:10|11|16|17|18|19)[-.\s]?\d{3,4}[-.\s]?\d{4}/g, "[PHONE_MASKED]")
+    .replace(/0\d{1,2}[-.\s]\d{3,4}[-.\s]\d{4}/g, "[PHONE_MASKED]")
+    .replace(new RegExp(`([?&](?:${sensitiveKey})=)[^&#\\s]*`, "gi"), "$1[MASKED]")
+    .replace(new RegExp(`(["'](?:${sensitiveKey})["']\\s*:\\s*["'])[^"']*(["'])`, "gi"), "$1[MASKED]$2")
+    .replace(/\b(PHPSESSID|connect\.sid|sessionid|authorization|cookie)\s*=\s*[^;\s,]+/gi, "$1=[MASKED]")
+    .replace(/<input\b[^>]*>/gi, tag => {
+      const sensitiveInput = new RegExp(`(?:name|id)\\s*=\\s*["']?(?:${sensitiveKey})`, "i");
+      if (!sensitiveInput.test(tag)) return tag;
+      return tag.replace(/(\bvalue\s*=\s*["'])[^"']*(["'])/i, "$1[MASKED]$2");
+    });
+
+  return text;
+}
+
 function errorDetails(error) {
   return {
     name: error?.name || "Error",
     code: error?.code || undefined,
-    message: error?.message || String(error)
+    message: redactSensitiveText(error?.message || String(error))
   };
 }
 
 function responsePreview(text, limit = 500) {
-  return String(text || "")
+  const normalized = String(text || "")
     .replace(/[\u0000-\u001f\u007f]+/g, " ")
     .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, limit);
+    .trim();
+  return redactSensitiveText(normalized).slice(0, limit);
 }
 
 function logPlaywrightFailure(stage, error) {
@@ -70,7 +93,7 @@ function logPlaywrightFailure(stage, error) {
 
 function logLoginFailure(stage, error, pageUrl = "") {
   console.error(
-    `[DiveSpot][DeepStation][LOGIN_FAILURE] stage=${stage} url=${pageUrl || "(unknown)"}`,
+    `[DiveSpot][DeepStation][LOGIN_FAILURE] stage=${stage} url=${redactSensitiveText(pageUrl || "(unknown)")}`,
     errorDetails(error)
   );
 }
@@ -240,15 +263,64 @@ function pagePathname(activePage) {
   }
 }
 
+async function waitForUserCheck(activePage) {
+  if (pagePathname(activePage) !== "/bg/check.php") return;
+
+  console.log(
+    `[DiveSpot][DeepStation][USER_CHECK] waiting url=${activePage.url()}`
+  );
+  await activePage.waitForURL(
+    url => url.pathname !== "/bg/check.php",
+    {
+      waitUntil: "domcontentloaded",
+      timeout: USER_CHECK_TIMEOUT_MS
+    }
+  ).catch(error => {
+    if (error?.name !== "TimeoutError") throw error;
+  });
+
+  if (pagePathname(activePage) === "/bg/check.php") {
+    throw providerError(
+      "딥스테이션 사용자 확인 페이지가 제한 시간 안에 완료되지 않았습니다.",
+      "DEEPSTATION_USER_CHECK_TIMEOUT",
+      503
+    );
+  }
+
+  await activePage.waitForLoadState("domcontentloaded").catch(() => undefined);
+  console.log(
+    `[DiveSpot][DeepStation][USER_CHECK] completed url=${activePage.url()}`
+  );
+}
+
+async function gotoWithUserCheck(activePage, url, options = {}) {
+  await activePage.goto(url, {
+    waitUntil: "domcontentloaded",
+    ...options
+  });
+  await waitForUserCheck(activePage);
+}
+
+async function waitForEntryDestination(activePage) {
+  if (!["/rez/step2.php", "/bg/check.php"].includes(pagePathname(activePage))) {
+    await activePage.waitForURL(
+      url => ["/rez/step2.php", "/bg/check.php"].includes(url.pathname),
+      { timeout: ENTRY_TIMEOUT_MS }
+    ).catch(error => {
+      if (error?.name !== "TimeoutError") throw error;
+    });
+  }
+
+  await waitForUserCheck(activePage);
+  await activePage.waitForLoadState("domcontentloaded").catch(() => undefined);
+}
+
 async function waitForEntryAction(activePage, action) {
   let result;
   try {
     result = await action();
   } catch (error) {
-    await activePage.waitForURL(
-      url => url.pathname === "/rez/step2.php",
-      { timeout: ENTRY_TIMEOUT_MS }
-    ).catch(() => undefined);
+    await waitForEntryDestination(activePage);
     if (pagePathname(activePage) !== "/rez/step2.php") throw error;
     result = { acted: true, strategy: "navigation-during-action" };
   }
@@ -257,13 +329,7 @@ async function waitForEntryAction(activePage, action) {
     return result;
   }
 
-  await activePage.waitForURL(
-    url => url.pathname === "/rez/step2.php",
-    { timeout: ENTRY_TIMEOUT_MS }
-  ).catch(error => {
-    if (error?.name !== "TimeoutError") throw error;
-  });
-  await activePage.waitForLoadState("domcontentloaded").catch(() => undefined);
+  await waitForEntryDestination(activePage);
   return result;
 }
 
@@ -409,7 +475,7 @@ async function followFreedivingStep1Link(activePage) {
   });
 
   if (!href) return { acted: false, strategy: "href" };
-  await activePage.goto(href, { waitUntil: "domcontentloaded", timeout: ENTRY_TIMEOUT_MS });
+  await gotoWithUserCheck(activePage, href, { timeout: ENTRY_TIMEOUT_MS });
   return { acted: true, strategy: "href", href };
 }
 
@@ -417,7 +483,7 @@ async function enterFreedivingStep2(activePage) {
   if (pagePathname(activePage) === "/rez/step2.php") return "already-step2";
 
   if (pagePathname(activePage) !== "/rez/step1.php") {
-    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+    await gotoWithUserCheck(activePage, STEP1_URL);
   }
 
   if (await pageShowsLogin(activePage)) {
@@ -441,7 +507,7 @@ async function enterFreedivingStep2(activePage) {
   }
 
   if (pagePathname(activePage) !== "/rez/step1.php") {
-    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+    await gotoWithUserCheck(activePage, STEP1_URL);
   }
   const formResult = await submitFreedivingStep1Form(activePage);
   attempts.push(formResult);
@@ -451,7 +517,7 @@ async function enterFreedivingStep2(activePage) {
   }
 
   if (pagePathname(activePage) !== "/rez/step1.php") {
-    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+    await gotoWithUserCheck(activePage, STEP1_URL);
   }
   const controlResult = await clickFreedivingStep1Control(activePage);
   attempts.push(controlResult);
@@ -461,8 +527,7 @@ async function enterFreedivingStep2(activePage) {
   }
 
   const step2WithType = `${RESERVATION_URL}?rtype=${encodeURIComponent("프리다이빙")}`;
-  await activePage.goto(step2WithType, {
-    waitUntil: "domcontentloaded",
+  await gotoWithUserCheck(activePage, step2WithType, {
     timeout: ENTRY_TIMEOUT_MS
   }).catch(error => {
     attempts.push({
@@ -477,7 +542,7 @@ async function enterFreedivingStep2(activePage) {
   }
 
   console.error(
-    `[DiveSpot][DeepStation][STEP2_FAILURE] finalUrl=${activePage.url()} attempts=${JSON.stringify(attempts)}`
+    `[DiveSpot][DeepStation][STEP2_FAILURE] finalUrl=${redactSensitiveText(activePage.url())} attempts=${redactSensitiveText(JSON.stringify(attempts))}`
   );
   throw providerError(
     "딥스테이션 프리다이빙 예약 2단계 페이지에 진입하지 못했습니다.",
@@ -548,7 +613,7 @@ async function doLogin() {
     await navigation;
 
     // 예약 1단계에서 프리다이빙을 실제로 선택해 2단계로 진입한다.
-    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+    await gotoWithUserCheck(activePage, STEP1_URL);
 
     if (await pageShowsLogin(activePage)) {
       throw providerError(
@@ -718,7 +783,7 @@ async function requestAvailabilityLocked(date) {
     console.warn(
       `[DiveSpot][DeepStation][STEP2] route state rejected; re-entering without login date=${date}`
     );
-    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+    await gotoWithUserCheck(activePage, STEP1_URL);
     await enterFreedivingStep2(activePage);
     result = await fetchAvailabilityPayload(activePage, date);
   }
@@ -782,18 +847,9 @@ async function getAvailability(date) {
   const request = requestAvailability(date).then(sessions => {
     cache.set(date, {
       expiresAt: Date.now() + CACHE_TTL_MS,
-      staleUntil: Date.now() + STALE_TTL_MS,
       sessions
     });
     return sessions;
-  }).catch(error => {
-    if (cached && cached.staleUntil > Date.now()) {
-      console.warn(
-        `[DiveSpot][DeepStation][STALE_FALLBACK] date=${date} code=${error?.code || "UNKNOWN"}`
-      );
-      return cached.sessions;
-    }
-    throw error;
   });
 
   inFlight.set(date, request);
@@ -889,5 +945,7 @@ module.exports = {
   closeBrowser,
   getAvailability,
   normalizeSessions,
+  redactSensitiveText,
+  waitForUserCheck,
   testChromium
 };
