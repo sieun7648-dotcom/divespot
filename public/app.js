@@ -264,7 +264,53 @@
     els.list.innerHTML = facilities.map(renderFacility).join("");
   }
 
+  function fetchDeepstationFromExtension(date, signal) {
+    return new Promise((resolve, reject) => {
+      const requestId = `divespot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const timeout = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("딥스테이션 확장프로그램이 연결되지 않았습니다. 확장프로그램 설치와 로그인을 확인해 주세요."));
+      }, 12000);
+
+      function cleanup() {
+        window.clearTimeout(timeout);
+        window.removeEventListener("message", onMessage);
+        signal?.removeEventListener("abort", onAbort);
+      }
+
+      function onAbort() {
+        cleanup();
+        reject(new DOMException("Aborted", "AbortError"));
+      }
+
+      function onMessage(event) {
+        if (event.source !== window) return;
+        const data = event.data;
+        if (!data || data.source !== "DIVESPOT_DEEPSTATION_EXTENSION" || data.requestId !== requestId) return;
+        cleanup();
+        if (!data.ok) {
+          reject(new Error(data.error || "딥스테이션 조회에 실패했습니다."));
+          return;
+        }
+        resolve(normalizeFacility({ connected: true, sessions: data.sessions || [] }, "deepstation"));
+      }
+
+      window.addEventListener("message", onMessage);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      window.postMessage({
+        source: "DIVESPOT_PAGE",
+        type: "GET_DEEPSTATION_AVAILABILITY",
+        requestId,
+        date
+      }, window.location.origin);
+    });
+  }
+
   async function fetchFacility(key, date, signal) {
+    if (key === "deepstation") {
+      return fetchDeepstationFromExtension(date, signal);
+    }
+
     const response = await fetch(
       `/api/availability?date=${encodeURIComponent(date)}&provider=${encodeURIComponent(key)}`,
       {
