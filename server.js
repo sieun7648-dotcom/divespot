@@ -36,8 +36,64 @@ function sendJson(res, statusCode, payload) {
   res.end(body);
 }
 
+function safeLogText(value) {
+  return String(value ?? "")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[EMAIL_MASKED]")
+    .replace(/(?:\+82[-.\s]?|0)(?:10|11|16|17|18|19)[-.\s]?\d{3,4}[-.\s]?\d{4}/g, "[PHONE_MASKED]")
+    .replace(/([?&](?:password|passwd|pwd|email|mb_id|user_id|token|sessionid|phpsessid)=)[^&#\s]*/gi, "$1[MASKED]")
+    .replace(/\b(PHPSESSID|connect\.sid|sessionid|authorization|cookie)\s*=\s*[^;\s,]+/gi, "$1=[MASKED]");
+}
+
+function safeErrorDetails(error) {
+  return {
+    name: error?.name || "Error",
+    code: error?.code || undefined,
+    statusCode: error?.statusCode || undefined,
+    message: safeLogText(error?.message || String(error))
+  };
+}
+
 function validDate(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return !Number.isNaN(parsed.getTime())
+    && parsed.toISOString().slice(0, 10) === value;
+}
+
+function koreaDate(now = new Date()) {
+  const values = {};
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(now);
+  for (const part of parts) {
+    if (part.type !== "literal") values[part.type] = part.value;
+  }
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function addCalendarMonths(value, amount) {
+  const [year, month, day] = value.split("-").map(Number);
+  const monthIndex = month - 1 + amount;
+  const targetYear = year + Math.floor(monthIndex / 12);
+  const targetMonthIndex = ((monthIndex % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0)).getUTCDate();
+  const targetDay = Math.min(day, lastDay);
+  return [
+    String(targetYear).padStart(4, "0"),
+    String(targetMonthIndex + 1).padStart(2, "0"),
+    String(targetDay).padStart(2, "0")
+  ].join("-");
+}
+
+function availabilityDateRange() {
+  const minDate = koreaDate();
+  return {
+    minDate,
+    maxDate: addCalendarMonths(minDate, 2)
+  };
 }
 
 async function loadProvider(provider, date) {
@@ -45,14 +101,14 @@ async function loadProvider(provider, date) {
     const sessions = await getAvailability(provider, date, null);
     return { provider, connected: true, sessions };
   } catch (error) {
-    console.error(`[DiveSpot] ${provider} error:`, error);
+    console.error(`[DiveSpot] ${provider} error:`, safeErrorDetails(error));
     return {
       provider,
       connected: false,
       sessions: [],
       error: {
         code: error.code || "PROVIDER_NOT_CONNECTED",
-        message: error.message || "시설 연동이 설정되지 않았습니다."
+        message: safeLogText(error.message || "시설 연동이 설정되지 않았습니다.")
       }
     };
   }
@@ -64,6 +120,18 @@ async function handleAvailability(reqUrl, res) {
 
   if (!validDate(date)) {
     sendJson(res, 400, { ok: false, message: "날짜 형식이 올바르지 않습니다." });
+    return;
+  }
+
+  const { minDate, maxDate } = availabilityDateRange();
+  if (date < minDate || date > maxDate) {
+    sendJson(res, 400, {
+      ok: false,
+      code: "DATE_OUT_OF_RANGE",
+      message: `조회 날짜는 오늘(${minDate})부터 ${maxDate}까지 선택해 주세요.`,
+      minDate,
+      maxDate
+    });
     return;
   }
 
@@ -171,7 +239,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, error.statusCode || 503, {
           ok: false,
           code: error.code || "PLAYWRIGHT_TEST_FAILED",
-          message: error.message || "Playwright Chromium 진단에 실패했습니다."
+          message: safeLogText(error.message || "Playwright Chromium 진단에 실패했습니다.")
         });
       }
       return;
@@ -189,7 +257,7 @@ const server = http.createServer(async (req, res) => {
     }
     sendFile(res, filePath);
   } catch (error) {
-    console.error("[DiveSpot] server error:", error);
+    console.error("[DiveSpot] server error:", safeErrorDetails(error));
     if (!res.headersSent) sendJson(res, 500, { ok: false, message: "서버 오류가 발생했습니다." });
     else res.end();
   }
