@@ -22,7 +22,11 @@
     time: document.querySelector("#updateTime"),
     help: document.querySelector("#helpButton"),
     dialog: document.querySelector("#helpDialog"),
-    close: document.querySelector("#closeHelpButton")
+    close: document.querySelector("#closeHelpButton"),
+    paradiveStatusIcon: document.querySelector("#paradiveStatusIcon"),
+    paradiveStatusText: document.querySelector("#paradiveStatusText"),
+    deepstationStatusIcon: document.querySelector("#deepstationStatusIcon"),
+    deepstationStatusText: document.querySelector("#deepstationStatusText")
   };
 
   let loading = false;
@@ -188,7 +192,36 @@
     `;
   }
 
+  function setConnectionPending() {
+    const items = [
+      [els.paradiveStatusIcon, els.paradiveStatusText],
+      [els.deepstationStatusIcon, els.deepstationStatusText]
+    ];
+
+    for (const [icon, text] of items) {
+      if (icon) {
+        icon.textContent = "…";
+        icon.classList.remove("disconnected");
+      }
+      if (text) text.textContent = "확인 중";
+    }
+  }
+
+  function updateConnectionStatus(facilities) {
+    for (const facility of facilities) {
+      const icon = facility.key === "paradive" ? els.paradiveStatusIcon : els.deepstationStatusIcon;
+      const text = facility.key === "paradive" ? els.paradiveStatusText : els.deepstationStatusText;
+      const connected = facility.connected && facility.sessions.length > 0;
+      if (icon) {
+        icon.textContent = connected ? "✓" : "!";
+        icon.classList.toggle("disconnected", !connected);
+      }
+      if (text) text.textContent = connected ? "연결됨" : "확인 필요";
+    }
+  }
+
   function render(facilities) {
+    updateConnectionStatus(facilities);
     els.list.innerHTML = facilities.map(renderFacility).join("");
   }
 
@@ -196,6 +229,7 @@
     if (loading) return;
     setLoading(true);
     setNotice("");
+    setConnectionPending();
     renderLoading();
 
     const date = els.date.value || localDate(new Date());
@@ -238,9 +272,21 @@
     if (e.target === els.dialog) els.dialog.close();
   });
 
-  document.addEventListener("DOMContentLoaded", load);
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", load, { once: true });
+  } else {
+    load();
+  }
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.getRegistrations()
+      .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
+      .catch(() => {});
+  }
+
+  if ("caches" in window) {
+    caches.keys()
+      .then(keys => Promise.all(keys.map(key => caches.delete(key))))
+      .catch(() => {});
   }
 })();
