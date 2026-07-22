@@ -37,20 +37,58 @@
 
   const SELECTED_DATE_KEY = "divespot_selected_date";
   const pad = n => String(n).padStart(2, "0");
-  const localDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  const validDate = value => {
+    const text = String(value || "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+    const parsed = new Date(`${text}T00:00:00.000Z`);
+    return !Number.isNaN(parsed.getTime())
+      && parsed.toISOString().slice(0, 10) === text;
+  };
+
+  function koreaDate(date = new Date()) {
+    const values = {};
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(date);
+    parts.forEach(part => {
+      if (part.type !== "literal") values[part.type] = part.value;
+    });
+    return `${values.year}-${values.month}-${values.day}`;
+  }
+
+  function addCalendarMonths(value, amount) {
+    const [year, month, day] = value.split("-").map(Number);
+    const monthIndex = month - 1 + amount;
+    const targetYear = year + Math.floor(monthIndex / 12);
+    const targetMonthIndex = ((monthIndex % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(targetYear, targetMonthIndex + 1, 0)).getUTCDate();
+    return [
+      String(targetYear).padStart(4, "0"),
+      String(targetMonthIndex + 1).padStart(2, "0"),
+      String(Math.min(day, lastDay)).padStart(2, "0")
+    ].join("-");
+  }
+
+  const MIN_SELECTABLE_DATE = koreaDate();
+  const MAX_SELECTABLE_DATE = addCalendarMonths(MIN_SELECTABLE_DATE, 2);
+  const selectableDate = value => validDate(value)
+    && value >= MIN_SELECTABLE_DATE
+    && value <= MAX_SELECTABLE_DATE;
 
   function readSelectedDate() {
     try {
       const saved = localStorage.getItem(SELECTED_DATE_KEY);
-      return validDate(saved) ? saved : localDate(new Date());
+      return selectableDate(saved) ? saved : MIN_SELECTABLE_DATE;
     } catch {
-      return localDate(new Date());
+      return MIN_SELECTABLE_DATE;
     }
   }
 
   function saveSelectedDate(value) {
-    if (!validDate(value)) return;
+    if (!selectableDate(value)) return;
     try {
       localStorage.setItem(SELECTED_DATE_KEY, value);
     } catch {
@@ -302,7 +340,7 @@
     setConnectionPending();
     els.time.textContent = "조회 중...";
 
-    const date = validDate(els.date.value) ? els.date.value : readSelectedDate();
+    const date = selectableDate(els.date.value) ? els.date.value : readSelectedDate();
     els.date.value = date;
     saveSelectedDate(date);
 
@@ -342,13 +380,15 @@
     setLoading(false);
   }
 
+  els.date.min = MIN_SELECTABLE_DATE;
+  els.date.max = MAX_SELECTABLE_DATE;
   els.date.value = readSelectedDate();
   els.refresh.addEventListener("click", () => {
     saveSelectedDate(els.date.value);
     load();
   });
   els.date.addEventListener("change", () => {
-    const selected = validDate(els.date.value) ? els.date.value : localDate(new Date());
+    const selected = selectableDate(els.date.value) ? els.date.value : MIN_SELECTABLE_DATE;
     els.date.value = selected;
     saveSelectedDate(selected);
     load();
