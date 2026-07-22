@@ -77,7 +77,7 @@ function browserHeaders(cookie = "", extra = {}) {
   const headers = {
     Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
     ...extra
   };
   if (cookie) headers.Cookie = cookie;
@@ -203,17 +203,38 @@ async function performLogin() {
     throw providerError("딥스테이션 로그인에 실패했습니다. 새로 만든 일반 계정의 아이디와 비밀번호를 확인해 주세요.", "DEEPSTATION_LOGIN_FAILED", 503);
   }
 
-  // 로그인 직후 예약 페이지까지 실제 브라우저처럼 한 번 방문해 예약용 세션 쿠키를 완성한다.
+  // 실제 브라우저처럼 예약 1단계 → 2단계 순서로 진입해 예약 관련 세션을 만든다.
+  const step1 = await requestWithCookieJar(`${BASE_URL}/rez/step1.php`, {
+    method: "GET",
+    headers: {
+      Referer: BASE_URL,
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
+      "Upgrade-Insecure-Requests": "1"
+    }
+  }, cookie);
+  cookie = step1.cookie;
+  const step1Text = await step1.response.text();
+
   const warmup = await requestWithCookieJar(RESERVATION_URL, {
     method: "GET",
-    headers: { Referer: BASE_URL }
+    headers: {
+      Referer: `${BASE_URL}/rez/step1.php`,
+      "Sec-Fetch-Dest": "document",
+      "Sec-Fetch-Mode": "navigate",
+      "Sec-Fetch-Site": "same-origin",
+      "Upgrade-Insecure-Requests": "1"
+    }
   }, cookie);
   cookie = warmup.cookie;
   const warmupText = await warmup.response.text();
 
-  if (looksLikeLoginPage(warmupText, warmup.finalUrl)) {
+  if (looksLikeLoginPage(step1Text, step1.finalUrl) || looksLikeLoginPage(warmupText, warmup.finalUrl)) {
     throw providerError("딥스테이션 로그인 후 예약 페이지 세션을 만들지 못했습니다.", "DEEPSTATION_LOGIN_FAILED", 503);
   }
+
+  console.log(`[DiveSpot] DeepStation reservation warmup: step1=${step1.response.status}, step2=${warmup.response.status}`);
 
   if (!cookie) {
     throw providerError("딥스테이션에서 로그인 쿠키를 받지 못했습니다.", "DEEPSTATION_LOGIN_FAILED", 503);
@@ -248,9 +269,14 @@ async function fetchAvailabilityPayload(date, cookie) {
   const result = await requestWithCookieJar(url, {
     method: "GET",
     headers: {
-      Accept: "application/json, text/plain, */*",
+      Accept: "application/json, text/javascript, */*; q=0.01",
       Referer: RESERVATION_URL,
-      "X-Requested-With": "XMLHttpRequest"
+      "X-Requested-With": "XMLHttpRequest",
+      "Sec-Fetch-Dest": "empty",
+      "Sec-Fetch-Mode": "cors",
+      "Sec-Fetch-Site": "same-origin",
+      "Cache-Control": "no-cache",
+      Pragma: "no-cache"
     }
   }, cookie);
 
@@ -263,6 +289,7 @@ async function fetchAvailabilityPayload(date, cookie) {
     payload,
     status: result.response.status,
     loggedOut: looksLikeLoginPage(text, result.finalUrl),
+    wrongPath: payload?.msg === "올바른 경로로 접근하세요",
     preview: text.replace(/\s+/g, " ").slice(0, 160)
   };
 }
@@ -271,7 +298,7 @@ async function requestAvailability(date) {
   let cookie = await ensureSession(false);
   let result = await fetchAvailabilityPayload(date, cookie);
 
-  if (result.loggedOut || !Array.isArray(result.payload?.remain?.gen)) {
+  if (result.loggedOut || result.wrongPath || !Array.isArray(result.payload?.remain?.gen)) {
     if (canAutoLogin()) {
       sessionCookie = "";
       cookie = await ensureSession(true);
