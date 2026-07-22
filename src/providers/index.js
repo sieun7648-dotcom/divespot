@@ -11,4 +11,8 @@ async function getAvailability(provider, date, req) {
   throw error;
 }
 
-module.exports = { getAvailability };
+module.exports = {
+  closeBrowsers: deepstation.closeBrowser,
+  getAvailability,
+  testPlaywrightChromium: deepstation.testChromium
+};

@@ -1,14 +1,12 @@
+FROM mcr.microsoft.com/playwright:v1.61.0-noble
 
-const paradive = require("./paradive");
-const deepstation = require("./deepstation");
+ENV NODE_ENV=production
+WORKDIR /app
 
-async function getAvailability(provider, date, req) {
-  if (provider === "paradive") return paradive.getAvailability(date, req);
-  if (provider === "deepstation") return deepstation.getAvailability(date, req);
+COPY package*.json ./
+RUN npm install --omit=dev
 
-  const error = new Error("지원하지 않는 시설입니다.");
-  error.statusCode = 400;
-  throw error;
-}
+COPY . .
 
-module.exports = { getAvailability };
+EXPOSE 3000
+CMD ["node", "server.js"]

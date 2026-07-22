@@ -1,422 +1,623 @@
-(() => {
-  "use strict";
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700;800;900&display=swap');
 
-  const META = {
-    paradive: {
-      name: "PARADIVE",
-      subtitle: "파라다이브 예약 현황",
-      url: "https://paradive.co.kr/service/pc/page/reservation01.php"
-    },
-    deepstation: {
-      name: "DEEP STATION",
-      subtitle: "딥스테이션 예약 현황",
-      url: "https://deepstation.kr/rez/step2.php"
-    }
-  };
+:root {
+  --bg: #f4f7fd;
+  --card: #ffffff;
+  --text: #10234d;
+  --muted: #71809f;
+  --line: #e2e8f2;
+  --blue: #1559d8;
+  --blue-dark: #053a92;
+  --purple: #5837b8;
+  --purple-dark: #38207f;
+  --green: #22a96f;
+  --green-bg: #e7f7ef;
+  --orange: #ff9700;
+  --orange-bg: #fff2df;
+  --red: #ff4d59;
+  --red-bg: #ffe9eb;
+  --shadow: 0 14px 35px rgba(29, 55, 100, .10);
+}
 
-  const els = {
-    date: document.querySelector("#dateInput"),
-    refresh: document.querySelector("#refreshButton"),
-    list: document.querySelector("#facilityList"),
-    notice: document.querySelector("#notice"),
-    time: document.querySelector("#updateTime"),
-    help: document.querySelector("#helpButton"),
-    dialog: document.querySelector("#helpDialog"),
-    close: document.querySelector("#closeHelpButton"),
-    paradiveStatusIcon: document.querySelector("#paradiveStatusIcon"),
-    paradiveStatusText: document.querySelector("#paradiveStatusText"),
-    deepstationStatusIcon: document.querySelector("#deepstationStatusIcon"),
-    deepstationStatusText: document.querySelector("#deepstationStatusText")
-  };
+* { box-sizing: border-box; }
 
-  let loading = false;
-  let loadSequence = 0;
-  let activeController = null;
+html { min-height: 100%; background: var(--bg); }
 
-  const FACILITY_KEYS = ["paradive", "deepstation"];
+body {
+  margin: 0;
+  min-width: 320px;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 5% 0%, rgba(63, 122, 255, .10), transparent 30rem),
+    var(--bg);
+  font-family: "Noto Sans KR", -apple-system, BlinkMacSystemFont, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
 
-  const SELECTED_DATE_KEY = "divespot_selected_date";
-  const pad = n => String(n).padStart(2, "0");
-  const localDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+button, input { font: inherit; }
+button { cursor: pointer; }
 
-  function readSelectedDate() {
-    try {
-      const saved = localStorage.getItem(SELECTED_DATE_KEY);
-      return validDate(saved) ? saved : localDate(new Date());
-    } catch {
-      return localDate(new Date());
-    }
+.app {
+  width: min(980px, calc(100% - 36px));
+  margin: 0 auto;
+  padding: max(26px, env(safe-area-inset-top)) 0 max(24px, env(safe-area-inset-bottom));
+}
+
+.topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 26px;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: clamp(34px, 5vw, 48px);
+  line-height: 1;
+  letter-spacing: -.045em;
+  color: #0d2859;
+}
+
+.topbar p {
+  margin: 10px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.top-actions { display: flex; gap: 12px; }
+
+.circle-button,
+.help-button {
+  border: 0;
+  background: #fff;
+  box-shadow: var(--shadow);
+  color: #102b5d;
+}
+
+.circle-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  font-size: 24px;
+}
+
+.help-button {
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 24px;
+  font-weight: 800;
+}
+
+.help-button span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-right: 7px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  font-size: 12px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.date-box {
+  display: flex;
+  align-items: center;
+  width: 300px;
+  min-height: 66px;
+  padding: 0 20px;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+}
+
+.calendar-icon {
+  margin-right: 12px;
+  color: var(--text);
+  font-size: 18px;
+}
+
+.date-box input {
+  width: 100%;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.refresh-button {
+  min-height: 66px;
+  padding: 0 24px;
+  border: 0;
+  border-radius: 16px;
+  color: #0c55d1;
+  background: #fff;
+  box-shadow: var(--shadow);
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.refresh-symbol {
+  display: inline-block;
+  margin-right: 8px;
+  font-size: 23px;
+}
+
+.refresh-button.loading .refresh-symbol { animation: spin .8s linear infinite; }
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.login-panel {
+  display: grid;
+  grid-template-columns: auto 1px 1fr 1px 1fr auto;
+  align-items: center;
+  gap: 22px;
+  margin-bottom: 24px;
+  padding: 20px 26px;
+  background: #fff;
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+}
+
+.login-panel > strong {
+  font-size: 17px;
+}
+
+.login-divider {
+  width: 1px;
+  height: 42px;
+  background: var(--line);
+}
+
+.login-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.login-item small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.login-item b {
+  display: block;
+  margin-top: 2px;
+  font-size: 15px;
+}
+
+.login-check {
+  display: inline-flex;
+  width: 38px;
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.login-check.para { background: linear-gradient(135deg, #47c99b, #20a36e); }
+.login-check.deep { background: linear-gradient(135deg, #7051d7, #4c2cb8); }
+
+.update-time {
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.notice {
+  margin-bottom: 18px;
+  padding: 13px 16px;
+  border: 1px solid #f0ce71;
+  border-radius: 13px;
+  color: #8a5f08;
+  background: #fff7dc;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.facility-list {
+  display: grid;
+  gap: 24px;
+}
+
+.facility-card {
+  overflow: hidden;
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: var(--shadow);
+}
+
+.facility-hero {
+  display: grid;
+  grid-template-columns: 1.2fr repeat(3, .7fr);
+  align-items: center;
+  min-height: 154px;
+  padding: 24px 28px;
+  color: #fff;
+}
+
+.facility-card.paradive .facility-hero {
+  background: linear-gradient(135deg, #1d65df 0%, #0d3d96 100%);
+}
+
+.facility-card.deepstation .facility-hero {
+  background: linear-gradient(135deg, #6043be 0%, #382174 100%);
+}
+
+.facility-title h2 {
+  margin: 0 0 14px;
+  font-size: 30px;
+  letter-spacing: -.025em;
+}
+
+.facility-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 31px;
+  padding: 5px 13px;
+  border-radius: 999px;
+  color: #14704c;
+  background: #c9f5d9;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.facility-badge.limited {
+  color: #8a5600;
+  background: #ffe1a8;
+}
+
+.facility-badge.closed {
+  color: #a72832;
+  background: #ffd2d6;
+}
+
+.hero-stat {
+  min-width: 0;
+  padding: 0 18px;
+  border-left: 1px solid rgba(255,255,255,.28);
+}
+
+.hero-stat span {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 800;
+  opacity: .9;
+}
+
+.hero-stat strong {
+  font-size: 35px;
+  line-height: 1;
+  letter-spacing: -.04em;
+}
+
+.hero-stat small {
+  margin-left: 3px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.table-wrap { padding: 0 22px; }
+
+.session-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.session-table th,
+.session-table td {
+  height: 64px;
+  padding: 10px 8px;
+  text-align: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.session-table th {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.session-table td {
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.session-table .part {
+  color: #1457ca;
+  font-size: 17px;
+  font-weight: 900;
+}
+
+.session-table .time {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.value {
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.value.available { color: var(--green); }
+.value.limited { color: var(--orange); }
+.value.closed { color: var(--red); }
+.value.unknown { color: var(--muted); }
+
+.facility-footer { padding: 18px 22px 20px; }
+
+.booking-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 58px;
+  border-radius: 12px;
+  color: #fff;
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.paradive .booking-button {
+  background: linear-gradient(90deg, #0b4fc2, #062b73);
+}
+
+.deepstation .booking-button {
+  background: linear-gradient(90deg, #5131b3, #342077);
+}
+
+.booking-button::before {
+  content: "↗";
+  margin-right: 10px;
+  font-size: 20px;
+}
+
+.booking-button::after {
+  content: "›";
+  margin-left: 12px;
+  font-size: 24px;
+}
+
+.footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  margin-top: 22px;
+  padding: 22px 24px;
+  color: var(--muted);
+  background: rgba(255,255,255,.65);
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.footer-brand strong { color: #104fbc; }
+
+.help-dialog {
+  width: min(430px, calc(100% - 32px));
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.help-dialog::backdrop {
+  background: rgba(10, 24, 55, .45);
+  backdrop-filter: blur(4px);
+}
+
+.help-card {
+  padding: 22px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 25px 80px rgba(13, 34, 75, .24);
+}
+
+.help-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.help-head h2 { margin: 0; }
+
+.help-head button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: #edf1f7;
+  font-size: 22px;
+}
+
+.help-card ol {
+  margin: 20px 0 0;
+  padding-left: 20px;
+  color: #52617d;
+  line-height: 1.9;
+}
+
+.skeleton {
+  min-height: 400px;
+  background: linear-gradient(90deg, #f6f8fc 25%, #ffffff 45%, #f6f8fc 65%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+}
+
+@keyframes shimmer { to { background-position: -200% 0; } }
+
+@media (max-width: 760px) {
+  .app {
+    width: min(100% - 20px, 560px);
+    padding-top: max(20px, env(safe-area-inset-top));
   }
 
-  function saveSelectedDate(value) {
-    if (!validDate(value)) return;
-    try {
-      localStorage.setItem(SELECTED_DATE_KEY, value);
-    } catch {
-      // 저장 공간을 사용할 수 없는 환경에서는 현재 화면의 날짜만 사용합니다.
-    }
+  .topbar { align-items: center; margin-bottom: 20px; }
+
+  .topbar h1 { font-size: 32px; }
+  .topbar p { font-size: 12px; margin-top: 7px; }
+
+  .circle-button { display: none; }
+
+  .help-button {
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    font-size: 0;
+    border-radius: 50%;
   }
 
-  function num(value) {
-    if (value === null || value === undefined || value === "") return null;
-    const n = Number(String(value).replace(/[^0-9.-]/g, ""));
-    return Number.isFinite(n) ? n : null;
+  .help-button span {
+    margin: 0;
+    font-size: 12px;
   }
 
-  function normalizeSession(raw, index) {
-    return {
-      part: raw.part ?? raw.session ?? raw.name ?? `${index + 1}부`,
-      time: raw.time ?? raw.hours ?? raw.period ?? "",
-      people: num(raw.people ?? raw.remainingPeople ?? raw.remaining_people ?? raw.available),
-      front: num(raw.front ?? raw.frontBuoy ?? raw.front_buoy ?? raw.buoyFront),
-      back: num(raw.back ?? raw.backBuoy ?? raw.back_buoy ?? raw.buoyBack)
-    };
+  .control-row { gap: 10px; }
+
+  .date-box {
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    min-height: 56px;
+    padding: 0 14px;
   }
 
-  function normalizeFacility(raw, key) {
-    const src = raw ?? {};
-    const sessions = src.sessions ?? src.items ?? src.availability ?? src.parts ?? [];
-    return {
-      key,
-      connected: src.connected !== false,
-      error: src.error?.message || "",
-      sessions: Array.isArray(sessions) ? sessions.map(normalizeSession) : []
-    };
+  .date-box input { font-size: 16px; }
+
+  .refresh-button {
+    width: 56px;
+    min-height: 56px;
+    padding: 0;
+    font-size: 0;
   }
 
-  function normalize(payload) {
-    const root = payload?.data ?? payload?.facilities ?? payload ?? {};
-    return [
-      normalizeFacility(root.paradive ?? root.paraDive ?? root.PARADIVE, "paradive"),
-      normalizeFacility(root.deepstation ?? root.deepStation ?? root.DEEPSTATION, "deepstation")
-    ];
+  .refresh-symbol {
+    margin: 0;
+    font-size: 25px;
   }
 
-  function statusClass(value) {
-    const n = num(value);
-    if (n === null) return "unknown";
-    if (n <= 0) return "closed";
-    if (n <= 5) return "limited";
-    return "available";
+  .login-panel {
+    grid-template-columns: 1fr 1fr auto;
+    gap: 10px;
+    padding: 14px;
   }
 
-  function display(value, unit = "") {
-    const n = num(value);
-    if (n === null) return "-";
-    if (n <= 0) return "마감";
-    return `${n}${unit}`;
+  .login-panel > strong,
+  .login-divider,
+  .update-time {
+    display: none;
   }
 
-  function displayBuoy(value, facilityKey) {
-    const n = num(value);
-    if (n === null) return "-";
-    if (facilityKey === "paradive") return n > 0 ? "예약 가능" : "마감";
-    return n > 0 ? `${n}석` : "마감";
+  .login-item { gap: 8px; }
+
+  .login-check {
+    width: 32px;
+    height: 32px;
+    font-size: 18px;
   }
 
-  function buoyHero(value, facilityKey) {
-    if (facilityKey !== "paradive") return `<strong>${value}</strong><small>석</small>`;
-    return `<strong>${value > 0 ? `${value}부` : "마감"}</strong><small>${value > 0 ? "예약 가능" : ""}</small>`;
+  .login-item small { font-size: 10px; }
+  .login-item b { font-size: 12px; }
+
+  .facility-hero {
+    grid-template-columns: 1.35fr repeat(3, .7fr);
+    min-height: 118px;
+    padding: 18px 14px;
   }
 
-  function summary(sessions) {
-    return sessions.reduce((acc, item) => {
-      acc.people += Math.max(num(item.people) ?? 0, 0);
-      acc.front += Math.max(num(item.front) ?? 0, 0);
-      acc.back += Math.max(num(item.back) ?? 0, 0);
-      return acc;
-    }, { people: 0, front: 0, back: 0 });
+  .facility-title h2 {
+    margin-bottom: 10px;
+    font-size: 19px;
   }
 
-  function overall(sessions) {
-    const values = sessions.map(x => num(x.people)).filter(x => x !== null);
-    if (!values.length) return { cls: "closed", label: "확인 필요" };
-    const total = values.reduce((a,b) => a+b, 0);
-    const max = Math.max(...values);
-    if (total <= 0) return { cls: "closed", label: "전체 마감" };
-    if (max <= 5) return { cls: "limited", label: "마감 임박" };
-    return { cls: "available", label: "예약 가능" };
+  .facility-badge {
+    min-height: 25px;
+    padding: 4px 9px;
+    font-size: 10px;
   }
 
-  function esc(value) {
-    return String(value)
-      .replaceAll("&", "&amp;")
-      .replaceAll("<", "&lt;")
-      .replaceAll(">", "&gt;")
-      .replaceAll('"', "&quot;")
-      .replaceAll("'", "&#039;");
+  .hero-stat {
+    padding: 0 7px;
+    text-align: center;
   }
 
-  function renderFacility(facility) {
-    const meta = META[facility.key];
-    const sum = summary(facility.sessions);
-    const state = overall(facility.sessions);
-
-    const rows = facility.sessions.map(s => `
-      <tr>
-        <td class="part">${esc(s.part)}</td>
-        <td class="time">${esc(s.time || "-")}</td>
-        <td><span class="value ${statusClass(s.people)}">${display(s.people, "명")}</span></td>
-        <td><span class="value ${statusClass(s.front)}">${displayBuoy(s.front, facility.key)}</span></td>
-        <td><span class="value ${statusClass(s.back)}">${displayBuoy(s.back, facility.key)}</span></td>
-      </tr>
-    `).join("");
-
-    const emptyMessage = facility.error || "조회 데이터가 없습니다.";
-
-    return `
-      <article class="facility-card ${facility.key}">
-        <div class="facility-hero">
-          <div class="facility-title">
-            <h2>${meta.name}</h2>
-            <span class="facility-badge ${state.cls}">${state.label}</span>
-          </div>
-          <div class="hero-stat">
-            <span>총 잔여 인원</span>
-            <strong>${sum.people}</strong><small>명</small>
-          </div>
-          <div class="hero-stat">
-            <span>전반 부이</span>
-            ${buoyHero(sum.front, facility.key)}
-          </div>
-          <div class="hero-stat">
-            <span>후반 부이</span>
-            ${buoyHero(sum.back, facility.key)}
-          </div>
-        </div>
-
-        <div class="table-wrap">
-          <table class="session-table">
-            <thead>
-              <tr>
-                <th>시간</th>
-                <th class="time-column"></th>
-                <th>추가 예약 가능 인원</th>
-                <th>35M 부이 전반</th>
-                <th>35M 부이 후반</th>
-              </tr>
-            </thead>
-            <tbody>${rows || `<tr><td colspan="5">${esc(emptyMessage)}</td></tr>`}</tbody>
-          </table>
-        </div>
-
-        <div class="facility-footer">
-          <a class="booking-button" href="${meta.url}" target="_blank" rel="noopener noreferrer">
-            ${meta.subtitle.replace(" 예약 현황", "")} 공식 예약페이지로 이동
-          </a>
-        </div>
-      </article>
-    `;
+  .hero-stat span {
+    margin-bottom: 5px;
+    font-size: 9px;
+    line-height: 1.3;
   }
 
-  function setNotice(message) {
-    els.notice.hidden = !message;
-    els.notice.textContent = message;
+  .hero-stat strong { font-size: 23px; }
+  .hero-stat small { display: block; margin: 3px 0 0; font-size: 9px; }
+
+  .table-wrap { padding: 0 10px; }
+
+  .session-table th,
+  .session-table td {
+    height: 54px;
+    padding: 8px 3px;
   }
 
-  function setLoading(value) {
-    loading = value;
-    els.refresh.disabled = value;
-    els.refresh.classList.toggle("loading", value);
+  .session-table th {
+    font-size: 10px;
   }
 
-  function renderLoadingCard(key) {
-    return `<div class="facility-card skeleton ${key}" aria-label="${META[key].name} 조회 중"></div>`;
+  .session-table td {
+    font-size: 11px;
   }
 
-  function renderState(state) {
-    els.list.innerHTML = FACILITY_KEYS
-      .map(key => state[key] ? renderFacility(state[key]) : renderLoadingCard(key))
-      .join("");
+  .session-table .time-column,
+  .session-table .time {
+    display: none;
   }
 
-  function setConnectionPending() {
-    const items = [
-      [els.paradiveStatusIcon, els.paradiveStatusText],
-      [els.deepstationStatusIcon, els.deepstationStatusText]
-    ];
+  .session-table .part { font-size: 14px; }
+  .value { font-size: 12px; }
 
-    for (const [icon, text] of items) {
-      if (icon) {
-        icon.textContent = "…";
-        icon.classList.remove("disconnected");
-      }
-      if (text) text.textContent = "확인 중";
-    }
+  .facility-footer { padding: 14px 10px 16px; }
+
+  .booking-button {
+    min-height: 52px;
+    font-size: 13px;
   }
 
-  function updateConnectionStatus(facilities) {
-    for (const facility of facilities) {
-      const icon = facility.key === "paradive" ? els.paradiveStatusIcon : els.deepstationStatusIcon;
-      const text = facility.key === "paradive" ? els.paradiveStatusText : els.deepstationStatusText;
-      const connected = facility.connected && facility.sessions.length > 0;
-      if (icon) {
-        icon.textContent = connected ? "✓" : "!";
-        icon.classList.toggle("disconnected", !connected);
-      }
-      if (text) text.textContent = connected ? "연결됨" : "확인 필요";
-    }
+  .footer {
+    display: block;
+    padding: 16px;
+    text-align: center;
+    font-size: 10px;
   }
 
-  function render(facilities) {
-    updateConnectionStatus(facilities);
-    els.list.innerHTML = facilities.map(renderFacility).join("");
+  .footer-brand { margin-top: 8px; }
+}
+
+@media (max-width: 380px) {
+  .facility-hero {
+    grid-template-columns: 1.15fr repeat(3, .72fr);
   }
 
-  function fetchDeepstationFromExtension(date, signal) {
-    return new Promise((resolve, reject) => {
-      const requestId = `divespot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const timeout = window.setTimeout(() => {
-        cleanup();
-        reject(new Error("딥스테이션 확장프로그램이 연결되지 않았습니다. 확장프로그램 설치와 로그인을 확인해 주세요."));
-      }, 12000);
-
-      function cleanup() {
-        window.clearTimeout(timeout);
-        window.removeEventListener("message", onMessage);
-        signal?.removeEventListener("abort", onAbort);
-      }
-
-      function onAbort() {
-        cleanup();
-        reject(new DOMException("Aborted", "AbortError"));
-      }
-
-      function onMessage(event) {
-        if (event.source !== window) return;
-        const data = event.data;
-        if (!data || data.source !== "DIVESPOT_DEEPSTATION_EXTENSION" || data.requestId !== requestId) return;
-        cleanup();
-        if (!data.ok) {
-          reject(new Error(data.error || "딥스테이션 조회에 실패했습니다."));
-          return;
-        }
-        resolve(normalizeFacility({ connected: true, sessions: data.sessions || [] }, "deepstation"));
-      }
-
-      window.addEventListener("message", onMessage);
-      signal?.addEventListener("abort", onAbort, { once: true });
-      window.postMessage({
-        source: "DIVESPOT_PAGE",
-        type: "GET_DEEPSTATION_AVAILABILITY",
-        requestId,
-        date
-      }, window.location.origin);
-    });
-  }
-
-  async function fetchFacility(key, date, signal) {
-    if (key === "deepstation") {
-      return fetchDeepstationFromExtension(date, signal);
-    }
-
-    const response = await fetch(
-      `/api/availability?date=${encodeURIComponent(date)}&provider=${encodeURIComponent(key)}`,
-      {
-        headers: { Accept: "application/json" },
-        cache: "no-store",
-        signal
-      }
-    );
-
-    let payload = null;
-    try {
-      payload = await response.json();
-    } catch {
-      // JSON이 아닌 오류 응답은 아래의 공통 메시지로 처리합니다.
-    }
-
-    if (!response.ok || payload?.ok === false) {
-      const message = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
-      throw new Error(message);
-    }
-
-    return normalizeFacility({
-      connected: true,
-      sessions: payload?.sessions || []
-    }, key);
-  }
-
-  async function load() {
-    const sequence = ++loadSequence;
-    activeController?.abort();
-    activeController = new AbortController();
-
-    setLoading(true);
-    setNotice("");
-    setConnectionPending();
-    els.time.textContent = "조회 중...";
-
-    const date = validDate(els.date.value) ? els.date.value : readSelectedDate();
-    els.date.value = date;
-    saveSelectedDate(date);
-
-    const state = { paradive: null, deepstation: null };
-    const errors = {};
-    renderState(state);
-
-    const tasks = FACILITY_KEYS.map(async key => {
-      try {
-        const facility = await fetchFacility(key, date, activeController.signal);
-        if (sequence !== loadSequence) return;
-        state[key] = facility;
-        delete errors[key];
-      } catch (error) {
-        if (error?.name === "AbortError" || sequence !== loadSequence) return;
-        console.warn(`[DiveSpot] ${key} load failed`, error);
-        const message = error?.message || "연결 실패";
-        state[key] = normalizeFacility({
-          connected: false,
-          error: { message },
-          sessions: []
-        }, key);
-        errors[key] = `${META[key].name}: ${message}`;
-      }
-
-      if (sequence !== loadSequence) return;
-      updateConnectionStatus([state[key]]);
-      renderState(state);
-      setNotice(FACILITY_KEYS.map(item => errors[item]).filter(Boolean).join(" · "));
-    });
-
-    await Promise.allSettled(tasks);
-
-    if (sequence !== loadSequence) return;
-    const now = new Date();
-    els.time.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())} 업데이트`;
-    setLoading(false);
-  }
-
-  els.date.value = readSelectedDate();
-  els.refresh.addEventListener("click", () => {
-    saveSelectedDate(els.date.value);
-    load();
-  });
-  els.date.addEventListener("change", () => {
-    const selected = validDate(els.date.value) ? els.date.value : localDate(new Date());
-    els.date.value = selected;
-    saveSelectedDate(selected);
-    load();
-  });
-  window.addEventListener("pagehide", () => saveSelectedDate(els.date.value));
-
-  els.help.addEventListener("click", () => els.dialog.showModal());
-  els.close.addEventListener("click", () => els.dialog.close());
-  els.dialog.addEventListener("click", e => {
-    if (e.target === els.dialog) els.dialog.close();
-  });
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", load, { once: true });
-  } else {
-    load();
-  }
-
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js?v=9")
-        .catch(error => console.warn("[DiveSpot] service worker registration failed", error));
-    }, { once: true });
-  }
-})();
+  .hero-stat strong { font-size: 20px; }
+  .session-table th { font-size: 9px; }
+  .value { font-size: 11px; }
+}
