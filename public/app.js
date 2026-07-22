@@ -30,6 +30,10 @@
   };
 
   let loading = false;
+  let loadSequence = 0;
+  let activeController = null;
+
+  const FACILITY_KEYS = ["paradive", "deepstation"];
 
   const SELECTED_DATE_KEY = "divespot_selected_date";
   const pad = n => String(n).padStart(2, "0");
@@ -205,11 +209,14 @@
     els.refresh.classList.toggle("loading", value);
   }
 
-  function renderLoading() {
-    els.list.innerHTML = `
-      <div class="facility-card skeleton"></div>
-      <div class="facility-card skeleton"></div>
-    `;
+  function renderLoadingCard(key) {
+    return `<div class="facility-card skeleton ${key}" aria-label="${META[key].name} 조회 중"></div>`;
+  }
+
+  function renderState(state) {
+    els.list.innerHTML = FACILITY_KEYS
+      .map(key => state[key] ? renderFacility(state[key]) : renderLoadingCard(key))
+      .join("");
   }
 
   function setConnectionPending() {
@@ -245,43 +252,82 @@
     els.list.innerHTML = facilities.map(renderFacility).join("");
   }
 
+  async function fetchFacility(key, date, signal) {
+    const response = await fetch(
+      `/api/availability?date=${encodeURIComponent(date)}&provider=${encodeURIComponent(key)}`,
+      {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+        signal
+      }
+    );
+
+    let payload = null;
+    try {
+      payload = await response.json();
+    } catch {
+      // JSON이 아닌 오류 응답은 아래의 공통 메시지로 처리합니다.
+    }
+
+    if (!response.ok || payload?.ok === false) {
+      const message = payload?.error?.message || payload?.message || `HTTP ${response.status}`;
+      throw new Error(message);
+    }
+
+    return normalizeFacility({
+      connected: true,
+      sessions: payload?.sessions || []
+    }, key);
+  }
+
   async function load() {
-    if (loading) return;
+    const sequence = ++loadSequence;
+    activeController?.abort();
+    activeController = new AbortController();
+
     setLoading(true);
     setNotice("");
     setConnectionPending();
-    renderLoading();
+    els.time.textContent = "조회 중...";
 
     const date = validDate(els.date.value) ? els.date.value : readSelectedDate();
     els.date.value = date;
     saveSelectedDate(date);
 
-    try {
-      const response = await fetch(`/api/availability?date=${encodeURIComponent(date)}`, {
-        headers: { Accept: "application/json" },
-        cache: "no-store"
-      });
+    const state = { paradive: null, deepstation: null };
+    const errors = {};
+    renderState(state);
 
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
+    const tasks = FACILITY_KEYS.map(async key => {
+      try {
+        const facility = await fetchFacility(key, date, activeController.signal);
+        if (sequence !== loadSequence) return;
+        state[key] = facility;
+        delete errors[key];
+      } catch (error) {
+        if (error?.name === "AbortError" || sequence !== loadSequence) return;
+        console.warn(`[DiveSpot] ${key} load failed`, error);
+        const message = error?.message || "연결 실패";
+        state[key] = normalizeFacility({
+          connected: false,
+          error: { message },
+          sessions: []
+        }, key);
+        errors[key] = `${META[key].name}: ${message}`;
+      }
 
-      const facilities = normalize(payload);
-      const errors = facilities.filter(x => x.error).map(x => `${META[x.key].name}: ${x.error}`);
-      setNotice(errors.join(" · "));
-      render(facilities);
-    } catch (error) {
-      console.warn("[DiveSpot] load failed", error);
-      setNotice(error.message || "예약 현황을 불러오지 못했습니다.");
-      render([
-        normalizeFacility({ connected: false, error: { message: "연결 실패" }, sessions: [] }, "paradive"),
-        normalizeFacility({ connected: false, error: { message: "연결 준비 중" }, sessions: [] }, "deepstation")
-      ]);
-    } finally {
-      const now = new Date();
-      els.time.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())} 업데이트`;
-      setLoading(false);
-    }
+      if (sequence !== loadSequence) return;
+      updateConnectionStatus([state[key]]);
+      renderState(state);
+      setNotice(FACILITY_KEYS.map(item => errors[item]).filter(Boolean).join(" · "));
+    });
+
+    await Promise.allSettled(tasks);
+
+    if (sequence !== loadSequence) return;
+    const now = new Date();
+    els.time.textContent = `${pad(now.getHours())}:${pad(now.getMinutes())} 업데이트`;
+    setLoading(false);
   }
 
   els.date.value = readSelectedDate();
