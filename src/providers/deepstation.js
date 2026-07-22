@@ -171,7 +171,8 @@ async function performLogin() {
     throw providerError("Render에 DEEPSTATION_ID와 DEEPSTATION_PASSWORD를 설정해 주세요.", "DEEPSTATION_CREDENTIALS_REQUIRED", 503);
   }
 
-  let cookie = configuredCookie();
+  // 새 일반 계정 로그인은 기존 SNS/수동 쿠키와 섞지 않고 깨끗한 세션에서 시작한다.
+  let cookie = "";
 
   const page = await requestWithCookieJar(LOGIN_PAGE_URL, {
     method: "GET",
@@ -183,7 +184,8 @@ async function performLogin() {
   const form = new URLSearchParams();
   form.set("mb_id", id);
   form.set("mb_password", password);
-  form.set("url", RESERVATION_URL);
+  // 실제 브라우저 로그인 요청과 동일하게 홈 주소를 전달한다.
+  form.set("url", BASE_URL);
 
   const login = await requestWithCookieJar(LOGIN_CHECK_URL, {
     method: "POST",
@@ -286,6 +288,12 @@ async function requestAvailability(date) {
   }
   if (result.status >= 400 || Number(result.payload?.code) !== 1) {
     throw providerError(result.payload?.message || `딥스테이션 요청에 실패했습니다. (${result.status})`, "DEEPSTATION_REQUEST_FAILED", result.status >= 400 ? result.status : 502);
+  }
+  if (!Array.isArray(result.payload?.remain?.gen)) {
+    const topKeys = Object.keys(result.payload || {}).join(", ");
+    const remainKeys = Object.keys(result.payload?.remain || {}).join(", ");
+    console.error(`[DiveSpot] DeepStation unexpected JSON. keys=[${topKeys}] remainKeys=[${remainKeys}] preview=${JSON.stringify(result.payload).slice(0, 1000)}`);
+    throw providerError("딥스테이션 응답은 받았지만 일반권 목록이 없습니다. Render 로그의 DeepStation unexpected JSON 항목을 확인해 주세요.", "DEEPSTATION_BAD_RESPONSE", 502);
   }
   return normalizeSessions(result.payload);
 }
