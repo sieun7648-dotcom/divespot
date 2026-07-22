@@ -14,8 +14,11 @@ function secondsFromEnv(name, fallback, minimum) {
 }
 
 const CACHE_TTL_MS = secondsFromEnv("DEEPSTATION_CACHE_SECONDS", 120, 30);
-const SESSION_TTL_MS = secondsFromEnv("DEEPSTATION_SESSION_SECONDS", 20 * 60, 60);
+// 실제 로그아웃 응답은 자동 감지하므로 정상 세션을 짧은 주기로 버리지 않는다.
+const SESSION_TTL_MS = secondsFromEnv("DEEPSTATION_SESSION_SECONDS", 6 * 60 * 60, 6 * 60 * 60);
 const BROWSER_TIMEOUT_MS = secondsFromEnv("DEEPSTATION_TIMEOUT_SECONDS", 25, 5);
+const ENTRY_TIMEOUT_MS = secondsFromEnv("DEEPSTATION_ENTRY_TIMEOUT_SECONDS", 8, 3);
+const STALE_TTL_MS = secondsFromEnv("DEEPSTATION_STALE_SECONDS", 30 * 60, 60);
 const DIAGNOSTIC_TTL_MS = 60_000;
 
 const cache = new Map();
@@ -238,18 +241,29 @@ function pagePathname(activePage) {
 }
 
 async function waitForEntryAction(activePage, action) {
-  const navigation = activePage
-    .waitForNavigation({ waitUntil: "domcontentloaded" })
-    .catch(error => {
-      if (error?.name === "TimeoutError") return null;
-      throw error;
-    });
-
-  const result = await action();
-  if (result?.acted) {
-    await navigation;
-    await activePage.waitForLoadState("domcontentloaded").catch(() => undefined);
+  let result;
+  try {
+    result = await action();
+  } catch (error) {
+    await activePage.waitForURL(
+      url => url.pathname === "/rez/step2.php",
+      { timeout: ENTRY_TIMEOUT_MS }
+    ).catch(() => undefined);
+    if (pagePathname(activePage) !== "/rez/step2.php") throw error;
+    result = { acted: true, strategy: "navigation-during-action" };
   }
+
+  if (!result?.acted || pagePathname(activePage) === "/rez/step2.php") {
+    return result;
+  }
+
+  await activePage.waitForURL(
+    url => url.pathname === "/rez/step2.php",
+    { timeout: ENTRY_TIMEOUT_MS }
+  ).catch(error => {
+    if (error?.name !== "TimeoutError") throw error;
+  });
+  await activePage.waitForLoadState("domcontentloaded").catch(() => undefined);
   return result;
 }
 
@@ -258,7 +272,10 @@ async function submitFreedivingStep1Form(activePage) {
     const desired = "프리다이빙";
     const marker = element => {
       const images = Array.from(element.querySelectorAll?.("img") || [])
-        .map(image => `${image.alt || ""} ${image.title || ""}`)
+        .map(image => `${image.alt || ""} ${image.title || ""} ${image.src || ""}`)
+        .join(" ");
+      const fields = Array.from(element.querySelectorAll?.("input, select, button") || [])
+        .map(field => `${field.name || ""} ${field.value || ""}`)
         .join(" ");
       return [
         element.innerText,
@@ -267,10 +284,11 @@ async function submitFreedivingStep1Form(activePage) {
         element.getAttribute?.("action"),
         element.getAttribute?.("href"),
         element.getAttribute?.("onclick"),
-        images
+        images,
+        fields
       ].filter(Boolean).join(" ");
     };
-    const isFreediving = value => /프리\s*다이빙|free\s*div/i.test(String(value || ""));
+    const isFreediving = value => /프리\s*다이빙|free\s*div|freediv/i.test(String(value || ""));
     const forms = Array.from(document.forms);
     const scored = forms.map(form => {
       const action = form.getAttribute("action") || "";
@@ -306,7 +324,8 @@ async function submitFreedivingStep1Form(activePage) {
           choseFreediving = true;
         }
       } else {
-        field.value = desired;
+        // 선택된 프리다이빙 폼에 서버가 넣어 둔 값이 있으면 그대로 보존한다.
+        if (!field.value) field.value = desired;
         choseFreediving = true;
       }
 
@@ -315,7 +334,7 @@ async function submitFreedivingStep1Form(activePage) {
     }
 
     const submitters = Array.from(form.querySelectorAll(
-      'button, input[type="submit"], input[type="button"], [role="button"]'
+      'button, input[type="submit"], input[type="button"], input[type="image"], [role="button"]'
     ));
     const submitter = submitters.find(element => isFreediving(marker(element)))
       || submitters.find(element => element.type === "submit")
@@ -338,7 +357,7 @@ async function clickFreedivingStep1Control(activePage) {
   return waitForEntryAction(activePage, () => activePage.evaluate(() => {
     const marker = element => {
       const images = Array.from(element.querySelectorAll?.("img") || [])
-        .map(image => `${image.alt || ""} ${image.title || ""}`)
+        .map(image => `${image.alt || ""} ${image.title || ""} ${image.src || ""}`)
         .join(" ");
       return [
         element.innerText,
@@ -351,7 +370,7 @@ async function clickFreedivingStep1Control(activePage) {
       ].filter(Boolean).join(" ");
     };
     const controls = Array.from(document.querySelectorAll(
-      'main a, main button, main [role="button"], #container a, #container button, a[href*="step2.php"]'
+      'a, button, input[type="submit"], input[type="button"], input[type="image"], [role="button"], [onclick]'
     ));
     const freediving = controls.filter(element => /프리\s*다이빙|free\s*div/i.test(marker(element)));
     const selected = freediving.find(element => /step2\.php|\/rez\//i.test(marker(element)))
@@ -365,6 +384,33 @@ async function clickFreedivingStep1Control(activePage) {
     selected.click();
     return { acted: true, strategy: "control", description };
   }));
+}
+
+async function followFreedivingStep1Link(activePage) {
+  const href = await activePage.evaluate(() => {
+    const marker = element => {
+      const images = Array.from(element.querySelectorAll?.("img") || [])
+        .map(image => `${image.alt || ""} ${image.title || ""} ${image.src || ""}`)
+        .join(" ");
+      return [
+        element.innerText,
+        element.textContent,
+        element.getAttribute?.("href"),
+        element.getAttribute?.("aria-label"),
+        images
+      ].filter(Boolean).join(" ");
+    };
+    const links = Array.from(document.querySelectorAll("a[href]"));
+    const selected = links.find(element => (
+      /프리\s*다이빙|free\s*div/i.test(marker(element))
+      && /step2\.php|[?&]rtype=/i.test(element.href || "")
+    ));
+    return selected?.href || "";
+  });
+
+  if (!href) return { acted: false, strategy: "href" };
+  await activePage.goto(href, { waitUntil: "domcontentloaded", timeout: ENTRY_TIMEOUT_MS });
+  return { acted: true, strategy: "href", href };
 }
 
 async function enterFreedivingStep2(activePage) {
@@ -383,6 +429,20 @@ async function enterFreedivingStep2(activePage) {
   }
 
   const attempts = [];
+  const linkResult = await followFreedivingStep1Link(activePage).catch(error => ({
+    acted: false,
+    strategy: "href",
+    error: error?.message || String(error)
+  }));
+  attempts.push(linkResult);
+  if (pagePathname(activePage) === "/rez/step2.php") {
+    console.log("[DiveSpot][DeepStation][STEP2] entered via freediving link");
+    return "href";
+  }
+
+  if (pagePathname(activePage) !== "/rez/step1.php") {
+    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+  }
   const formResult = await submitFreedivingStep1Form(activePage);
   attempts.push(formResult);
   if (pagePathname(activePage) === "/rez/step2.php") {
@@ -401,7 +461,16 @@ async function enterFreedivingStep2(activePage) {
   }
 
   const step2WithType = `${RESERVATION_URL}?rtype=${encodeURIComponent("프리다이빙")}`;
-  await activePage.goto(step2WithType, { waitUntil: "domcontentloaded" });
+  await activePage.goto(step2WithType, {
+    waitUntil: "domcontentloaded",
+    timeout: ENTRY_TIMEOUT_MS
+  }).catch(error => {
+    attempts.push({
+      acted: false,
+      strategy: "typed-url",
+      error: error?.message || String(error)
+    });
+  });
   if (pagePathname(activePage) === "/rez/step2.php") {
     console.log("[DiveSpot][DeepStation][STEP2] entered via typed URL");
     return "typed-url";
@@ -413,7 +482,7 @@ async function enterFreedivingStep2(activePage) {
   throw providerError(
     "딥스테이션 프리다이빙 예약 2단계 페이지에 진입하지 못했습니다.",
     "DEEPSTATION_RESERVATION_PAGE_FAILED",
-    502
+    503
   );
 }
 
@@ -625,6 +694,7 @@ async function fetchAvailabilityPayload(activePage, date) {
   const loggedOut = /\/bbs\/login(?:\.php)?/i.test(raw.url || "")
     || /name=["']mb_password["']|type=["']password["']/i.test(raw.text || "");
   const wrongPathMessage = String(payload?.msg || payload?.message || "");
+  const wrongPath = /올바른\s*경로/.test(wrongPathMessage);
   const sessionRejected = loggedOut
     || /올바른\s*경로|로그인/i.test(wrongPathMessage)
     || !Array.isArray(payload?.remain?.gen);
@@ -634,6 +704,7 @@ async function fetchAvailabilityPayload(activePage, date) {
     status: raw.status,
     ok: raw.ok,
     loggedOut,
+    wrongPath,
     sessionRejected,
     preview
   };
@@ -642,6 +713,15 @@ async function fetchAvailabilityPayload(activePage, date) {
 async function requestAvailabilityLocked(date) {
   let activePage = await ensureAuthenticated(false);
   let result = await fetchAvailabilityPayload(activePage, date);
+
+  if (result.wrongPath && !result.loggedOut) {
+    console.warn(
+      `[DiveSpot][DeepStation][STEP2] route state rejected; re-entering without login date=${date}`
+    );
+    await activePage.goto(STEP1_URL, { waitUntil: "domcontentloaded" });
+    await enterFreedivingStep2(activePage);
+    result = await fetchAvailabilityPayload(activePage, date);
+  }
 
   if (result.sessionRejected) {
     console.warn(
@@ -702,9 +782,18 @@ async function getAvailability(date) {
   const request = requestAvailability(date).then(sessions => {
     cache.set(date, {
       expiresAt: Date.now() + CACHE_TTL_MS,
+      staleUntil: Date.now() + STALE_TTL_MS,
       sessions
     });
     return sessions;
+  }).catch(error => {
+    if (cached && cached.staleUntil > Date.now()) {
+      console.warn(
+        `[DiveSpot][DeepStation][STALE_FALLBACK] date=${date} code=${error?.code || "UNKNOWN"}`
+      );
+      return cached.sessions;
+    }
+    throw error;
   });
 
   inFlight.set(date, request);
