@@ -1,11 +1,18 @@
 services:
   - type: web
     name: divespot
-    runtime: node
+    runtime: docker
     plan: free
-    buildCommand: npm install
-    startCommand: npm start
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     envVars:
-      - key: NODE_VERSION
-        value: 20
+      - key: PARADIVE_COOKIE
+        sync: false
+      - key: DEEPSTATION_ID
+        sync: false
+      - key: DEEPSTATION_PASSWORD
+        sync: false
+      - key: DEEPSTATION_CACHE_SECONDS
+        value: 120
+      - key: DEEPSTATION_SESSION_SECONDS
+        value: 1200

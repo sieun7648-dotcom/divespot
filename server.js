@@ -4,7 +4,11 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const { URL } = require("url");
-const { getAvailability } = require("./src/providers");
+const {
+  closeBrowsers,
+  getAvailability,
+  testPlaywrightChromium
+} = require("./src/providers");
 
 const PORT = Number(process.env.PORT || 3000);
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -159,6 +163,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (reqUrl.pathname === "/api/playwright-test") {
+      try {
+        const diagnostic = await testPlaywrightChromium();
+        sendJson(res, 200, diagnostic);
+      } catch (error) {
+        sendJson(res, error.statusCode || 503, {
+          ok: false,
+          code: error.code || "PLAYWRIGHT_TEST_FAILED",
+          message: error.message || "Playwright Chromium 진단에 실패했습니다."
+        });
+      }
+      return;
+    }
+
     if (reqUrl.pathname === "/api/availability") {
       await handleAvailability(reqUrl, res);
       return;
@@ -180,3 +198,20 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`DiveSpot running on http://0.0.0.0:${PORT}`);
 });
+
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[DiveSpot] ${signal} received; shutting down`);
+
+  server.close(async () => {
+    await closeBrowsers();
+    process.exit(0);
+  });
+
+  setTimeout(() => process.exit(1), 10_000).unref();
+}
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT", () => shutdown("SIGINT"));
