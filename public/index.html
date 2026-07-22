@@ -132,9 +132,19 @@ button { cursor: pointer; }
 }
 
 .calendar-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
   margin-right: 12px;
   color: var(--text);
-  font-size: 18px;
+}
+
+.calendar-icon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
 }
 
 .date-box input {
@@ -653,7 +663,13 @@ button { cursor: pointer; }
 
     <section class="control-row">
       <label class="date-box">
-        <span class="calendar-icon">▣</span>
+        <span class="calendar-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="3.5" y="5.5" width="17" height="15" rx="2.5" stroke-width="2"/>
+            <path d="M7.5 3.5V7.5M16.5 3.5V7.5M3.5 9.5H20.5" stroke-width="2" stroke-linecap="round"/>
+            <path d="M8 13H10M14 13H16M8 17H10M14 17H16" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </span>
         <input id="dateInput" type="date" />
       </label>
       <button id="refreshButton" class="refresh-button" type="button">
@@ -699,6 +715,6 @@ button { cursor: pointer; }
     </div>
   </dialog>
 
-  <script src="/app.js?v=6" defer></script>
+  <script src="/app.js?v=7" defer></script>
 </body>
 </html>

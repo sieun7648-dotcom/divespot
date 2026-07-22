@@ -31,8 +31,28 @@
 
   let loading = false;
 
+  const SELECTED_DATE_KEY = "divespot_selected_date";
   const pad = n => String(n).padStart(2, "0");
   const localDate = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const validDate = value => /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+
+  function readSelectedDate() {
+    try {
+      const saved = localStorage.getItem(SELECTED_DATE_KEY);
+      return validDate(saved) ? saved : localDate(new Date());
+    } catch {
+      return localDate(new Date());
+    }
+  }
+
+  function saveSelectedDate(value) {
+    if (!validDate(value)) return;
+    try {
+      localStorage.setItem(SELECTED_DATE_KEY, value);
+    } catch {
+      // 저장 공간을 사용할 수 없는 환경에서는 현재 화면의 날짜만 사용합니다.
+    }
+  }
 
   function num(value) {
     if (value === null || value === undefined || value === "") return null;
@@ -232,7 +252,9 @@
     setConnectionPending();
     renderLoading();
 
-    const date = els.date.value || localDate(new Date());
+    const date = validDate(els.date.value) ? els.date.value : readSelectedDate();
+    els.date.value = date;
+    saveSelectedDate(date);
 
     try {
       const response = await fetch(`/api/availability?date=${encodeURIComponent(date)}`, {
@@ -262,9 +284,18 @@
     }
   }
 
-  els.date.value = localDate(new Date());
-  els.refresh.addEventListener("click", load);
-  els.date.addEventListener("change", load);
+  els.date.value = readSelectedDate();
+  els.refresh.addEventListener("click", () => {
+    saveSelectedDate(els.date.value);
+    load();
+  });
+  els.date.addEventListener("change", () => {
+    const selected = validDate(els.date.value) ? els.date.value : localDate(new Date());
+    els.date.value = selected;
+    saveSelectedDate(selected);
+    load();
+  });
+  window.addEventListener("pagehide", () => saveSelectedDate(els.date.value));
 
   els.help.addEventListener("click", () => els.dialog.showModal());
   els.close.addEventListener("click", () => els.dialog.close());
