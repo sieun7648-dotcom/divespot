@@ -1,15 +1,15 @@
 {
-  "name": "buoycheck",
+  "name": "divespot",
   "version": "1.0.0",
   "private": true,
-  "description": "다이빙 예약 가능 인원 및 부이 현황 PWA",
+  "description": "DiveSpot diving reservation availability PWA",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18 <25"
   },
   "dependencies": {
     "express": "^4.21.2"
