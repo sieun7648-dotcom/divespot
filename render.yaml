@@ -1,8 +1,11 @@
 services:
   - type: web
-    name: buoycheck
+    name: divespot
     runtime: node
     plan: free
     buildCommand: npm install
     startCommand: npm start
     healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: 20

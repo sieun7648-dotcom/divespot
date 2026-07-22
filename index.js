@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#f4f7fd" />
   <meta name="description" content="파라다이브와 딥스테이션 예약 현황" />
   <title>DiveSpot</title>
-  <link rel="manifest" href="/manifest.webmanifest" />
-  <link rel="stylesheet" href="/style.css?v=20260722-3" />
+  <link rel="manifest" href="/manifest.webmanifest?v=4" />
+  <link rel="stylesheet" href="/style.css?v=4" />
 </head>
 <body>
   <main class="app">
@@ -33,16 +33,16 @@
     </section>
 
     <section class="login-panel">
-      <strong>로그인 상태</strong>
+      <strong>연결 상태</strong>
       <div class="login-divider"></div>
       <div class="login-item">
-        <span class="login-check para">✓</span>
-        <span><small>파라다이브</small><b>연결됨</b></span>
+        <span id="paradiveStatusIcon" class="login-check para">✓</span>
+        <span><small>파라다이브</small><b id="paradiveStatusText">확인 중</b></span>
       </div>
       <div class="login-divider"></div>
       <div class="login-item">
-        <span class="login-check deep">✓</span>
-        <span><small>딥스테이션</small><b>연결됨</b></span>
+        <span id="deepstationStatusIcon" class="login-check deep">✓</span>
+        <span><small>딥스테이션</small><b id="deepstationStatusText">확인 중</b></span>
       </div>
       <div class="update-time" id="updateTime">--:-- 업데이트</div>
     </section>
@@ -70,6 +70,6 @@
     </div>
   </dialog>
 
-  <script src="/app.js?v=20260722-3" defer></script>
+  <script src="/app.js?v=4" defer></script>
 </body>
 </html>

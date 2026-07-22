@@ -1,8 +1,14 @@
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm install --omit=dev
-COPY . .
-ENV NODE_ENV=production
-EXPOSE 3000
-CMD ["npm", "start"]
+
+const paradive = require("./paradive");
+const deepstation = require("./deepstation");
+
+async function getAvailability(provider, date, req) {
+  if (provider === "paradive") return paradive.getAvailability(date, req);
+  if (provider === "deepstation") return deepstation.getAvailability(date, req);
+
+  const error = new Error("지원하지 않는 시설입니다.");
+  error.statusCode = 400;
+  throw error;
+}
+
+module.exports = { getAvailability };

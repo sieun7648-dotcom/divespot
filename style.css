@@ -1,11 +1,11 @@
 {
-  "name": "부이체크",
-  "short_name": "부이체크",
+  "name": "DiveSpot",
+  "short_name": "DiveSpot",
   "description": "파라다이브와 딥스테이션 예약 가능 인원 및 부이 현황 확인",
-  "start_url": "/",
+  "start_url": "/?app=1",
   "display": "standalone",
-  "background_color": "#edf4fb",
-  "theme_color": "#071d36",
+  "background_color": "#f4f7fd",
+  "theme_color": "#f4f7fd",
   "lang": "ko-KR",
   "icons": [
     {
