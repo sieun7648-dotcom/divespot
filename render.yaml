@@ -16,3 +16,5 @@ services:
         value: 120
       - key: DEEPSTATION_SESSION_SECONDS
         value: 1200
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /ms-playwright
