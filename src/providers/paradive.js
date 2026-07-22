@@ -8,6 +8,7 @@ const CACHE_TTL_MS = Math.max(30_000, Number(process.env.PARADIVE_CACHE_SECONDS 
 const MAX_PEOPLE = Math.max(2, Number(process.env.PARADIVE_MAX_PEOPLE || 40));
 const EXERCISE_SELECT = String(process.env.PARADIVE_EXERCISE_SELECT || "2");
 const USE_TIME = String(process.env.PARADIVE_USE_TIME || "2");
+const SESSION_CONCURRENCY = Math.min(3, Math.max(1, Number(process.env.PARADIVE_SESSION_CONCURRENCY || 2)));
 
 const SESSION_TIMES = [
   "08:00 ~ 11:00",
@@ -18,6 +19,7 @@ const SESSION_TIMES = [
 ];
 
 const cache = new Map();
+const inFlight = new Map();
 
 function providerError(message, code, statusCode = 502) {
   const error = new Error(message);
@@ -169,22 +171,50 @@ async function getSession(date, step) {
   };
 }
 
+async function getSessionsWithLimit(date) {
+  const steps = [1, 2, 3, 4, 5];
+  const sessions = new Array(steps.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= steps.length) return;
+      sessions[index] = await getSession(date, steps[index]);
+    }
+  }
+
+  const workerCount = Math.min(SESSION_CONCURRENCY, steps.length);
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  return sessions;
+}
+
 async function getAvailability(date) {
   const cached = cache.get(date);
   if (cached && cached.expiresAt > Date.now()) return cached.sessions;
 
-  // 동시에 너무 많은 검증 요청이 발생하지 않도록 부별로 순차 조회한다.
-  const sessions = [];
-  for (let step = 1; step <= 5; step += 1) {
-    sessions.push(await getSession(date, step));
+  // 같은 날짜를 여러 사용자가 동시에 조회해도 원본 사이트에는 한 번만 요청한다.
+  const pending = inFlight.get(date);
+  if (pending) return pending;
+
+  const request = (async () => {
+    // 파라다이브 서버에 무리가 가지 않도록 2개 부씩만 병렬 조회한다.
+    const sessions = await getSessionsWithLimit(date);
+    cache.set(date, {
+      expiresAt: Date.now() + CACHE_TTL_MS,
+      sessions
+    });
+    return sessions;
+  })();
+
+  inFlight.set(date, request);
+
+  try {
+    return await request;
+  } finally {
+    inFlight.delete(date);
   }
-
-  cache.set(date, {
-    expiresAt: Date.now() + CACHE_TTL_MS,
-    sessions
-  });
-
-  return sessions;
 }
 
 module.exports = { getAvailability };
