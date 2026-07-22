@@ -14,27 +14,6 @@
     }
   };
 
-  const DEMO = {
-    paradive: {
-      sessions: [
-        { part: "1부", time: "08:00 ~ 11:00", people: 9, front: 3, back: 2 },
-        { part: "2부", time: "11:00 ~ 14:00", people: 4, front: 1, back: 0 },
-        { part: "3부", time: "14:00 ~ 17:00", people: 0, front: 0, back: 0 },
-        { part: "4부", time: "17:00 ~ 20:00", people: 7, front: 2, back: 2 },
-        { part: "5부", time: "20:00 ~ 23:00", people: 3, front: 0, back: 1 }
-      ]
-    },
-    deepstation: {
-      sessions: [
-        { part: "1부", time: "08:00 ~ 11:00", people: 6, front: 2, back: 1 },
-        { part: "2부", time: "11:00 ~ 14:00", people: 2, front: 0, back: 1 },
-        { part: "3부", time: "14:00 ~ 17:00", people: 8, front: 3, back: 3 },
-        { part: "4부", time: "17:00 ~ 20:00", people: 1, front: 0, back: 0 },
-        { part: "5부", time: "20:00 ~ 23:00", people: 0, front: 0, back: 0 }
-      ]
-    }
-  };
-
   const els = {
     date: document.querySelector("#dateInput"),
     refresh: document.querySelector("#refreshButton"),
@@ -72,6 +51,8 @@
     const sessions = src.sessions ?? src.items ?? src.availability ?? src.parts ?? [];
     return {
       key,
+      connected: src.connected !== false,
+      error: src.error?.message || "",
       sessions: Array.isArray(sessions) ? sessions.map(normalizeSession) : []
     };
   }
@@ -142,6 +123,8 @@
       </tr>
     `).join("");
 
+    const emptyMessage = facility.error || "조회 데이터가 없습니다.";
+
     return `
       <article class="facility-card ${facility.key}">
         <div class="facility-hero">
@@ -174,7 +157,7 @@
                 <th>35M 부이 후반</th>
               </tr>
             </thead>
-            <tbody>${rows || '<tr><td colspan="5">조회 데이터가 없습니다.</td></tr>'}</tbody>
+            <tbody>${rows || `<tr><td colspan="5">${esc(emptyMessage)}</td></tr>`}</tbody>
           </table>
         </div>
 
@@ -224,19 +207,19 @@
       });
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const facilities = normalize(await response.json());
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload?.message || `HTTP ${response.status}`);
 
-      if (!facilities.some(x => x.sessions.length)) {
-        throw new Error("empty data");
-      }
-
+      const facilities = normalize(payload);
+      const errors = facilities.filter(x => x.error).map(x => `${META[x.key].name}: ${x.error}`);
+      setNotice(errors.join(" · "));
       render(facilities);
     } catch (error) {
-      console.warn("[DiveSpot] demo mode", error);
-      setNotice("현재 실시간 연동 전이라 예시 데이터가 표시되고 있습니다.");
+      console.warn("[DiveSpot] load failed", error);
+      setNotice(error.message || "예약 현황을 불러오지 못했습니다.");
       render([
-        normalizeFacility(DEMO.paradive, "paradive"),
-        normalizeFacility(DEMO.deepstation, "deepstation")
+        normalizeFacility({ connected: false, error: { message: "연결 실패" }, sessions: [] }, "paradive"),
+        normalizeFacility({ connected: false, error: { message: "연결 준비 중" }, sessions: [] }, "deepstation")
       ]);
     } finally {
       const now = new Date();
@@ -258,6 +241,6 @@
   document.addEventListener("DOMContentLoaded", load);
 
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/service-worker.js").catch(() => {});
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 })();

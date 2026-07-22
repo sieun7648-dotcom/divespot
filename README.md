@@ -1,73 +1,41 @@
-# 부이체크 최종 배포본
+# DiveSpot 실데이터 테스트 버전
 
-파라다이브·딥스테이션의 날짜별 예약 가능 인원과 부이 현황을 확인하기 위한 모바일 PWA입니다.
+파라다이브와 딥스테이션의 날짜별 예약 현황을 비교하는 모바일 PWA입니다.
+현재 파라다이브는 로그인 세션 쿠키를 Render 환경변수로 연결해 실데이터 조회를 시험할 수 있고, 딥스테이션은 아직 연결 준비 상태입니다.
 
-## 현재 포함된 기능
+## Render 환경변수
 
-- 파라다이브 / 딥스테이션 분리 화면
-- 공식 사이트 로그인 버튼
-- 로그인 완료 후 날짜별 조회 화면
-- 1부~5부 예약 가능 인원
-- 전반 부이 / 후반 부이 잔여 수량
-- 전체 / 예약 가능 / 부이 가능 필터
-- 예약페이지 바로가기
-- iPhone 홈 화면 추가용 PWA
-- 데모 모드
-- 실데이터 연동용 Express API 구조
-- Docker / Render 배포 설정
+Render Dashboard → DiveSpot 서비스 → Environment에서 아래 값을 추가합니다.
 
-## 중요한 제한
+- `PARADIVE_COOKIE` (필수): 로그인 후 브라우저 요청의 Cookie 헤더 값
+- `PARADIVE_MAX_PEOPLE` (선택, 기본 40): 최대 인원 탐색 상한
+- `PARADIVE_CACHE_SECONDS` (선택, 기본 300): 같은 날짜 결과 캐시 시간
+- `PARADIVE_EXERCISE_SELECT` (선택, 기본 2)
+- `PARADIVE_USE_TIME` (선택, 기본 2)
 
-일반 웹페이지는 다른 도메인인 파라다이브·딥스테이션의 로그인 쿠키를 읽을 수 없습니다.
-따라서 지금 프로젝트는 바로 배포할 수 있지만, 실제 잔여수량은 아직 표시되지 않습니다.
+주의: 쿠키는 GitHub 코드나 채팅에 넣지 마세요. 세션이 만료되면 Render의 `PARADIVE_COOKIE`만 새 값으로 바꿔야 합니다.
 
-실데이터를 연결하려면 다음 중 하나가 필요합니다.
+## 동작 방식
 
-1. 시설의 공식 API 또는 OAuth
-2. Safari/Chrome 확장프로그램이 로그인된 예약페이지에서 데이터를 수집
-3. 시설 예약페이지의 네트워크 요청을 분석한 뒤 안전한 인증 연결 구조 구축
-
-SNS 아이디, 비밀번호, 로그인 쿠키를 서버에 평문으로 저장하면 안 됩니다.
+- `op=stock` 요청으로 각 부의 예약 가능한 최대 인원을 이진 탐색합니다.
+- `op=select` 요청으로 전반/후반 부이 선택 가능 여부를 각각 확인합니다.
+- 부이는 현재 API가 수량을 주지 않으므로 `1자리 가능` 또는 `마감`으로 표시합니다.
+- 같은 날짜는 기본 5분간 캐시해 파라다이브 요청 횟수를 줄입니다.
 
 ## 로컬 실행
 
 ```bash
 npm install
+PARADIVE_COOKIE='PHPSESSID=...' npm start
+```
+
+Windows PowerShell:
+
+```powershell
+$env:PARADIVE_COOKIE="PHPSESSID=..."
 npm start
 ```
 
-브라우저에서 `http://localhost:3000` 접속
+## 주의
 
-## Render 배포
-
-1. 이 폴더를 GitHub 저장소에 업로드
-2. Render에서 Blueprint 또는 Web Service 생성
-3. `render.yaml` 사용 또는 아래 설정 입력
-   - Build Command: `npm install`
-   - Start Command: `npm start`
-4. 배포된 HTTPS 주소를 iPhone Safari에서 열기
-5. 공유 → 홈 화면에 추가
-
-## 실데이터 연결 위치
-
-- `src/providers/paradive.js`
-- `src/providers/deepstation.js`
-
-각 파일의 `getAvailability()`가 아래 형식으로 세션 목록을 반환하면 화면에 표시됩니다.
-
-```js
-[
-  {
-    part: "1부",
-    time: "08:00~11:00",
-    people: 9,
-    front: 3,
-    back: 2
-  }
-]
-```
-
-## 데모 확인
-
-앱에서 시설 로그인 흐름을 진행한 뒤 `데모 OFF`를 눌러 `데모 ON`으로 변경하고 조회하세요.
-예시 수량으로 최종 디자인과 기능을 확인할 수 있습니다.
+이 버전은 확인된 비공식 웹 요청을 재현하는 시험 구현입니다. 사이트 구조, 로그인 방식 또는 운영 정책이 바뀌면 동작하지 않을 수 있습니다. 자동 조회 빈도를 높이지 말고 개인적인 확인 용도로 제한하세요.
