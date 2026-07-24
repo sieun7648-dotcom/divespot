@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>DiveSpot 초기화</title>
+  <style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#f4f7fd;color:#10234d}div{text-align:center;padding:24px}strong{display:block;font-size:22px;margin-bottom:10px}p{color:#71809f}</style>
+</head>
+<body><div><strong>DiveSpot 화면을 초기화하고 있어요.</strong><p>잠시 후 새 화면으로 이동합니다.</p></div>
+<script>
+(async()=>{
+  try {
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(r => r.unregister()));
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map(k => caches.delete(k)));
+    }
+  } finally {
+    location.replace('/?fresh=' + Date.now());
+  }
+})();
+</script></body></html>
